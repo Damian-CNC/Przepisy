@@ -22,7 +22,7 @@ import { useCookingTimers, type CookingTimer } from '../../hooks/useCookingTimer
 import { useWakeLock } from '../../hooks/useWakeLock'
 import { formatScaledAmount } from '../../lib/recipesApi'
 import type { RecipeRow, RecipeStep } from '../../lib/supabase'
-import { AmbientBackground, GlassButton, GlassCard, GlassPill, cn } from '../ui'
+import { AmbientBackground, GlassButton, GlassCard, GlassModal, GlassPill, cn } from '../ui'
 
 export interface CookingModeViewProps {
   recipe: RecipeRow
@@ -68,6 +68,7 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
   const [slideDirection, setSlideDirection] = useState<1 | -1>(1)
   const [checkedIngredients, setCheckedIngredients] = useState<Record<string, boolean>>({})
   const [isCompleted, setIsCompleted] = useState(false)
+  const [pendingConfirmAction, setPendingConfirmAction] = useState<'next' | 'finish' | null>(null)
 
   const prefersReducedMotion = useReducedMotion()
   const { isActive: isWakeLockActive } = useWakeLock(true)
@@ -129,19 +130,20 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
     [prefersReducedMotion, safeStepIndex, totalSteps],
   )
 
-  const handlePrevious = useCallback(() => {
-    if (!isFirstStep) {
-      goToStep(safeStepIndex - 1)
-    }
-  }, [goToStep, isFirstStep, safeStepIndex])
+  const uncheckedStepIngredients = useMemo(() => {
+    if (!currentStep) return []
+    return currentStep.step_ingredients
+      .map((ing, idx) => {
+        const key = getIngredientKey(safeStepIndex, idx, ing.name)
+        const scaled =
+          ing.amount > 0 ? formatScaledAmount(ing.amount, baseServings, targetServings) : ''
+        const amountLabel = scaled ? `${scaled} ${ing.unit}`.trim() : ing.unit || 'wg uznania'
+        return { key, name: ing.name, amountLabel }
+      })
+      .filter((item) => !checkedIngredients[item.key])
+  }, [baseServings, checkedIngredients, currentStep, safeStepIndex, targetServings])
 
-  const handleNext = useCallback(() => {
-    if (!isLastStep) {
-      goToStep(safeStepIndex + 1)
-    }
-  }, [goToStep, isLastStep, safeStepIndex])
-
-  const handleFinishRecipe = useCallback(() => {
+  const completeRecipe = useCallback(() => {
     setIsCompleted(true)
     if (!prefersReducedMotion) {
       void confetti({
@@ -153,6 +155,59 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
     }
   }, [prefersReducedMotion])
 
+  const handlePrevious = useCallback(() => {
+    if (!isFirstStep) {
+      setPendingConfirmAction(null)
+      goToStep(safeStepIndex - 1)
+    }
+  }, [goToStep, isFirstStep, safeStepIndex])
+
+  const handleNext = useCallback(() => {
+    if (isLastStep) return
+    if (uncheckedStepIngredients.length > 0) {
+      setPendingConfirmAction('next')
+      return
+    }
+    goToStep(safeStepIndex + 1)
+  }, [goToStep, isLastStep, safeStepIndex, uncheckedStepIngredients.length])
+
+  const handleFinishRecipe = useCallback(() => {
+    if (!isCompleted && uncheckedStepIngredients.length > 0) {
+      setPendingConfirmAction('finish')
+      return
+    }
+    completeRecipe()
+  }, [completeRecipe, isCompleted, uncheckedStepIngredients.length])
+
+  const handleConfirmUncheckedAdvance = useCallback(() => {
+    const action = pendingConfirmAction
+    setPendingConfirmAction(null)
+    if (!action) return
+
+    if (uncheckedStepIngredients.length > 0) {
+      setCheckedIngredients((prev) => {
+        const next = { ...prev }
+        for (const item of uncheckedStepIngredients) {
+          next[item.key] = true
+        }
+        return next
+      })
+    }
+
+    if (action === 'next' && !isLastStep) {
+      goToStep(safeStepIndex + 1)
+    } else if (action === 'finish') {
+      completeRecipe()
+    }
+  }, [
+    completeRecipe,
+    goToStep,
+    isLastStep,
+    pendingConfirmAction,
+    safeStepIndex,
+    uncheckedStepIngredients,
+  ])
+
   const toggleIngredient = useCallback((key: string) => {
     setCheckedIngredients((prev) => ({
       ...prev,
@@ -163,6 +218,7 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
   // Keyboard navigation: ArrowLeft / ArrowRight / Escape
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (pendingConfirmAction !== null) return
       if (event.altKey || event.ctrlKey || event.metaKey) return
       const target = event.target
       if (
@@ -193,7 +249,7 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleExit, handleNext, handlePrevious])
+  }, [handleExit, handleNext, handlePrevious, pendingConfirmAction])
 
   const handlePointerDown = (event: React.PointerEvent<HTMLElement>) => {
     if (event.button !== 0 || isInteractiveSwipeTarget(event.target)) {
@@ -528,7 +584,7 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
-        className="mx-auto flex w-full max-w-3xl flex-1 touch-pan-y flex-col gap-5 px-4 pt-5 pb-36 sm:px-6"
+        className="mx-auto flex w-full max-w-3xl flex-1 touch-pan-y flex-col gap-4 px-4 pt-4 pb-24 sm:px-6"
       >
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
@@ -549,7 +605,7 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
                 ? { duration: 0.1 }
                 : { type: 'spring', stiffness: 360, damping: 32, mass: 0.9 }
             }
-            className="flex flex-col gap-5"
+            className="flex flex-col gap-4"
           >
             {/* Nagłówek aktualnego kroku */}
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -580,14 +636,42 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
               )}
             </div>
 
-            {/* Sekcja: Dodaj w tym kroku */}
+            {/* 1. Sekcja Instrukcji (pierwsza na górze!) */}
+            <section aria-labelledby="step-instruction-heading">
+              <GlassCard variant="elevated" padding="md">
+                <h2
+                  id="step-instruction-heading"
+                  className="mb-2.5 text-xs font-semibold tracking-wider text-stone-500 uppercase dark:text-stone-400"
+                >
+                  Instrukcja
+                </h2>
+                <p className="text-xl leading-relaxed font-medium text-pretty text-stone-950 md:text-2xl dark:text-stone-50">
+                  {currentStep.instruction}
+                </p>
+
+                {currentStep.tip && (
+                  <div className="mt-4 flex items-start gap-2.5 rounded-2xl border border-amber-500/30 bg-amber-500/12 p-3.5 text-sm leading-relaxed text-amber-950 sm:text-base dark:border-amber-400/25 dark:bg-amber-500/15 dark:text-amber-100">
+                    <Lightbulb
+                      className="mt-0.5 size-4.5 shrink-0 text-amber-700 dark:text-amber-300"
+                      aria-hidden="true"
+                    />
+                    <p>
+                      <span className="font-semibold">Wskazówka: </span>
+                      {currentStep.tip}
+                    </p>
+                  </div>
+                )}
+              </GlassCard>
+            </section>
+
+            {/* 2. Sekcja: Dodaj w tym kroku (pod instrukcją!) */}
             {currentStep.step_ingredients.length > 0 && (
               <section aria-labelledby="step-ingredients-heading">
-                <GlassCard variant="elevated" padding="md">
-                  <div className="mb-3.5 flex flex-wrap items-center justify-between gap-2">
+                <GlassCard variant="default" padding="md">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <h2
                       id="step-ingredients-heading"
-                      className="text-lg font-semibold tracking-tight text-stone-900 dark:text-stone-50"
+                      className="text-base font-semibold tracking-tight text-stone-900 sm:text-lg dark:text-stone-50"
                     >
                       Dodaj w tym kroku
                     </h2>
@@ -598,7 +682,7 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
                     </GlassPill>
                   </div>
 
-                  <div className="flex flex-col gap-2.5">
+                  <div className="flex flex-col gap-2">
                     {currentStep.step_ingredients.map((ing, idx) => {
                       const key = getIngredientKey(safeStepIndex, idx, ing.name)
                       const isChecked = Boolean(checkedIngredients[key])
@@ -617,7 +701,7 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
                           aria-pressed={isChecked}
                           onClick={() => toggleIngredient(key)}
                           className={cn(
-                            'flex min-h-12 w-full cursor-pointer items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition-all duration-150',
+                            'flex min-h-11 w-full cursor-pointer items-center justify-between gap-3 rounded-2xl border px-3.5 py-2.5 text-left transition-all duration-150',
                             'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 dark:focus-visible:outline-amber-400',
                             isChecked
                               ? 'border-emerald-600/35 bg-emerald-600/12 text-stone-600 dark:border-emerald-400/30 dark:bg-emerald-500/15 dark:text-stone-300'
@@ -638,7 +722,7 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
                             </span>
                             <span
                               className={cn(
-                                'text-base font-medium sm:text-lg',
+                                'text-base font-medium',
                                 isChecked && 'line-through opacity-75',
                               )}
                             >
@@ -648,7 +732,7 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
 
                           <span
                             className={cn(
-                              'shrink-0 text-base font-semibold tabular-nums sm:text-lg',
+                              'shrink-0 text-base font-semibold tabular-nums',
                               isChecked
                                 ? 'text-emerald-800 line-through opacity-80 dark:text-emerald-300'
                                 : 'text-amber-800 dark:text-amber-300',
@@ -664,78 +748,34 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
               </section>
             )}
 
-            {/* Sekcja Instrukcji — wysoki kontrast i czytelność z 1 m */}
-            <section aria-labelledby="step-instruction-heading">
-              <GlassCard variant="default" padding="lg">
-                <h2
-                  id="step-instruction-heading"
-                  className="mb-3 text-xs font-semibold tracking-wider text-stone-500 uppercase dark:text-stone-400"
-                >
-                  Instrukcja
-                </h2>
-                <p className="text-xl leading-relaxed font-medium text-pretty text-stone-950 md:text-2xl dark:text-stone-50">
-                  {currentStep.instruction}
-                </p>
-
-                {currentStep.tip && (
-                  <div className="mt-5 flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/12 p-4 text-base leading-relaxed text-amber-950 dark:border-amber-400/25 dark:bg-amber-500/15 dark:text-amber-100">
-                    <Lightbulb
-                      className="mt-0.5 size-5 shrink-0 text-amber-700 dark:text-amber-300"
-                      aria-hidden="true"
-                    />
-                    <p>
-                      <span className="font-semibold">Wskazówka: </span>
-                      {currentStep.tip}
-                    </p>
-                  </div>
-                )}
-              </GlassCard>
-            </section>
-
-            {/* Sekcja Minutnika kroku */}
+            {/* 3. Kompaktowa sekcja Minutnika kroku */}
             {currentStep.timer_seconds > 0 && (
               <section aria-labelledby="step-timer-heading" data-no-swipe="true">
                 <GlassCard
-                  variant="elevated"
-                  padding="md"
+                  variant="default"
+                  padding="sm"
                   className={cn(
                     currentStepTimer?.status === 'finished' &&
                       'border-emerald-500/60 ring-2 ring-emerald-500/35 dark:border-emerald-400/55',
                   )}
                 >
-                  <div className="flex flex-col gap-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
+                  {!currentStepTimer || currentStepTimer.status === 'idle' ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2.5">
                       <h2
                         id="step-timer-heading"
-                        className="inline-flex items-center gap-2 text-base font-semibold text-stone-900 dark:text-stone-50"
+                        className="inline-flex items-center gap-2 text-sm font-semibold text-stone-900 dark:text-stone-50"
                       >
                         <Timer
-                          className="size-5 text-amber-700 dark:text-amber-400"
+                          className="size-4 text-amber-700 dark:text-amber-400"
                           aria-hidden="true"
                         />
                         <span>Minutnik kroku {currentStep.step_number}</span>
                       </h2>
 
-                      {currentStepTimer && currentStepTimer.status !== 'idle' && (
-                        <GlassPill
-                          variant={currentStepTimer.status === 'finished' ? 'active' : 'tag'}
-                          size="sm"
-                        >
-                          {currentStepTimer.status === 'running'
-                            ? 'Odlicza'
-                            : currentStepTimer.status === 'paused'
-                              ? 'Wstrzymany'
-                              : 'Czas minął!'}
-                        </GlassPill>
-                      )}
-                    </div>
-
-                    {!currentStepTimer || currentStepTimer.status === 'idle' ? (
                       <GlassButton
                         variant="primary"
-                        size="lg"
-                        fullWidth
-                        leftIcon={<Play className="size-5 fill-current" aria-hidden="true" />}
+                        size="sm"
+                        leftIcon={<Play className="size-3.5 fill-current" aria-hidden="true" />}
                         onClick={() =>
                           startTimer(
                             safeStepIndex,
@@ -744,89 +784,107 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
                             currentStep.timer_seconds,
                           )
                         }
-                        className="min-h-14"
+                        className="min-h-9 px-3.5"
                       >
                         <span className="tabular-nums">
-                          Uruchom minutnik ({formatCountdown(currentStep.timer_seconds)})
+                          Start ({formatCountdown(currentStep.timer_seconds)})
                         </span>
                       </GlassButton>
-                    ) : (
-                      <div className="flex flex-col gap-4">
-                        <div className="flex items-center justify-center rounded-2xl border border-white/50 bg-white/55 px-4 py-4 dark:border-white/10 dark:bg-zinc-950/50">
-                          <span
-                            className={cn(
-                              'text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl',
-                              currentStepTimer.status === 'finished'
-                                ? 'text-emerald-700 dark:text-emerald-400'
-                                : 'text-stone-950 dark:text-stone-50',
-                            )}
-                          >
-                            {currentStepTimer.status === 'finished'
-                              ? '00:00'
-                              : formatCountdown(currentStepTimer.remainingSeconds)}
-                          </span>
-                        </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center justify-between gap-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <h2
+                          id="step-timer-heading"
+                          className="inline-flex items-center gap-1.5 text-sm font-semibold text-stone-800 dark:text-stone-200"
+                        >
+                          <Timer
+                            className="size-4 text-amber-700 dark:text-amber-400"
+                            aria-hidden="true"
+                          />
+                          <span className="sr-only">Minutnik kroku {currentStep.step_number}</span>
+                        </h2>
 
-                        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                          {currentStepTimer.status === 'running' && (
-                            <GlassButton
-                              variant="secondary"
-                              size="md"
-                              leftIcon={<Pause className="size-4" aria-hidden="true" />}
-                              onClick={() => pauseTimer(currentStepTimer.id)}
-                              className="min-h-11"
-                            >
-                              Pauza
-                            </GlassButton>
+                        <span
+                          className={cn(
+                            'text-2xl font-semibold tracking-tight tabular-nums',
+                            currentStepTimer.status === 'finished'
+                              ? 'text-emerald-700 dark:text-emerald-400'
+                              : 'text-stone-950 dark:text-stone-50',
                           )}
+                        >
+                          {currentStepTimer.status === 'finished'
+                            ? '00:00'
+                            : formatCountdown(currentStepTimer.remainingSeconds)}
+                        </span>
 
-                          {currentStepTimer.status === 'paused' && (
-                            <GlassButton
-                              variant="primary"
-                              size="md"
-                              leftIcon={<Play className="size-4 fill-current" aria-hidden="true" />}
-                              onClick={() => resumeTimer(currentStepTimer.id)}
-                              className="min-h-11"
-                            >
-                              Wznów
-                            </GlassButton>
-                          )}
+                        <GlassPill
+                          variant={currentStepTimer.status === 'finished' ? 'active' : 'tag'}
+                          size="sm"
+                        >
+                          {currentStepTimer.status === 'running'
+                            ? 'Odlicza'
+                            : currentStepTimer.status === 'paused'
+                              ? 'Pauza'
+                              : 'Koniec!'}
+                        </GlassPill>
+                      </div>
 
-                          {currentStepTimer.status === 'finished' && (
-                            <GlassButton
-                              variant="primary"
-                              size="md"
-                              leftIcon={<BellOff className="size-4" aria-hidden="true" />}
-                              onClick={() => dismissTimer(currentStepTimer.id)}
-                              className="min-h-11"
-                            >
-                              Wycisz
-                            </GlassButton>
-                          )}
-
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {currentStepTimer.status === 'running' && (
                           <GlassButton
                             variant="secondary"
-                            size="md"
-                            leftIcon={<Plus className="size-4" aria-hidden="true" />}
-                            onClick={() => addMinute(currentStepTimer.id)}
-                            className="min-h-11"
+                            size="sm"
+                            leftIcon={<Pause className="size-3.5" aria-hidden="true" />}
+                            onClick={() => pauseTimer(currentStepTimer.id)}
                           >
-                            +1 min
+                            Pauza
                           </GlassButton>
+                        )}
 
+                        {currentStepTimer.status === 'paused' && (
                           <GlassButton
-                            variant="ghost"
-                            size="md"
-                            leftIcon={<RotateCcw className="size-4" aria-hidden="true" />}
-                            onClick={() => resetTimer(currentStepTimer.id)}
-                            className="min-h-11"
+                            variant="primary"
+                            size="sm"
+                            leftIcon={<Play className="size-3.5 fill-current" aria-hidden="true" />}
+                            onClick={() => resumeTimer(currentStepTimer.id)}
                           >
-                            Reset
+                            Wznów
                           </GlassButton>
-                        </div>
+                        )}
+
+                        {currentStepTimer.status === 'finished' && (
+                          <GlassButton
+                            variant="primary"
+                            size="sm"
+                            leftIcon={<BellOff className="size-3.5" aria-hidden="true" />}
+                            onClick={() => dismissTimer(currentStepTimer.id)}
+                          >
+                            Wycisz
+                          </GlassButton>
+                        )}
+
+                        <GlassButton
+                          variant="secondary"
+                          size="sm"
+                          leftIcon={<Plus className="size-3.5" aria-hidden="true" />}
+                          onClick={() => addMinute(currentStepTimer.id)}
+                        >
+                          +1 min
+                        </GlassButton>
+
+                        <GlassButton
+                          variant="ghost"
+                          size="sm"
+                          aria-label="Resetuj minutnik"
+                          onClick={() => resetTimer(currentStepTimer.id)}
+                          className="px-2.5"
+                        >
+                          <RotateCcw className="size-3.5" aria-hidden="true" />
+                        </GlassButton>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </GlassCard>
               </section>
             )}
@@ -875,19 +933,19 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
         </AnimatePresence>
       </main>
 
-      {/* Dolna nawigacja dla brudnych / mokrych rąk (Thumb Zone) */}
+      {/* Dolna nawigacja (kompaktowa wysokość — ok. połowa poprzedniej) */}
       <nav
         aria-label="Nawigacja kroków gotowania"
         className="pointer-events-none fixed inset-x-0 bottom-0 z-30 border-t border-white/40 bg-[#fbf8f3]/80 backdrop-blur-2xl backdrop-saturate-150 dark:border-white/10 dark:bg-zinc-950/80"
       >
-        <div className="pointer-events-auto mx-auto grid w-full max-w-3xl grid-cols-2 gap-3 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-6">
+        <div className="pointer-events-auto mx-auto grid w-full max-w-3xl grid-cols-2 gap-2.5 px-4 pt-2 pb-[max(0.625rem,env(safe-area-inset-bottom))] sm:px-6">
           <GlassButton
             variant="secondary"
-            size="lg"
+            size="sm"
             disabled={isFirstStep}
-            leftIcon={<ChevronLeft className="size-6" aria-hidden="true" />}
+            leftIcon={<ChevronLeft className="size-4" aria-hidden="true" />}
             onClick={handlePrevious}
-            className="min-h-14 text-base sm:text-lg"
+            className="h-7 !min-h-7 rounded-xl px-3 py-0.5 text-xs sm:text-sm"
           >
             Poprzedni
           </GlassButton>
@@ -895,25 +953,69 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
           {isLastStep ? (
             <GlassButton
               variant="primary"
-              size="lg"
+              size="sm"
               onClick={handleFinishRecipe}
-              className="min-h-14 text-base sm:text-lg"
+              className="h-7 !min-h-7 rounded-xl px-3 py-0.5 text-xs sm:text-sm"
             >
               Gotowe! Smacznego 🎉
             </GlassButton>
           ) : (
             <GlassButton
               variant="primary"
-              size="lg"
-              rightIcon={<ChevronRight className="size-6" aria-hidden="true" />}
+              size="sm"
+              rightIcon={<ChevronRight className="size-4" aria-hidden="true" />}
               onClick={handleNext}
-              className="min-h-14 text-base sm:text-lg"
+              className="h-7 !min-h-7 rounded-xl px-3 py-0.5 text-xs sm:text-sm"
             >
               Następny krok
             </GlassButton>
           )}
         </div>
       </nav>
+
+      {/* Modal potwierdzenia niezaznaczonych składników przed przejściem dalej */}
+      <GlassModal
+        isOpen={pendingConfirmAction !== null}
+        onClose={() => setPendingConfirmAction(null)}
+        title="Nie wszystkie składniki odhaczone"
+        subtitle="Upewnij się przed przejściem dalej, że poniższe składniki trafiły już do potrawy:"
+        size="sm"
+        footer={
+          <>
+            <GlassButton
+              variant="ghost"
+              size="md"
+              autoFocus
+              onClick={() => setPendingConfirmAction(null)}
+            >
+              Wróć i zaznacz
+            </GlassButton>
+            <GlassButton
+              variant="primary"
+              size="md"
+              onClick={handleConfirmUncheckedAdvance}
+            >
+              {pendingConfirmAction === 'finish'
+                ? 'Tak, dodane — zakończ'
+                : 'Tak, dodane — dalej'}
+            </GlassButton>
+          </>
+        }
+      >
+        <ul className="space-y-2 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-3.5 text-sm dark:border-amber-400/20 dark:bg-amber-500/12">
+          {uncheckedStepIngredients.map((item) => (
+            <li
+              key={item.key}
+              className="flex items-baseline justify-between gap-3 text-stone-900 dark:text-stone-100"
+            >
+              <span className="font-medium">{item.name}</span>
+              <span className="shrink-0 font-semibold text-amber-800 tabular-nums dark:text-amber-300">
+                {item.amountLabel}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </GlassModal>
     </div>
   )
 }
