@@ -8,6 +8,7 @@ import {
   ChefHat,
   ChevronLeft,
   ChevronRight,
+  Eye,
   Lightbulb,
   Mic,
   Pause,
@@ -76,6 +77,7 @@ export function CookingModeView({
   const [slideDirection, setSlideDirection] = useState<1 | -1>(1)
   const [checkedIngredients, setCheckedIngredients] = useState<Record<string, boolean>>({})
   const [isCompleted, setIsCompleted] = useState(false)
+  const [isPreviewMode, setIsPreviewMode] = useState(false)
   const [pendingConfirmAction, setPendingConfirmAction] = useState<'next' | 'finish' | null>(null)
   const [isVoiceEditorOpen, setIsVoiceEditorOpen] = useState(false)
 
@@ -171,22 +173,33 @@ export function CookingModeView({
     }
   }, [goToStep, isFirstStep, safeStepIndex])
 
+  const advanceStepAction = useCallback(
+    (action: 'next' | 'finish') => {
+      if (action === 'next' && !isLastStep) {
+        goToStep(safeStepIndex + 1)
+      } else if (action === 'finish') {
+        completeRecipe()
+      }
+    },
+    [completeRecipe, goToStep, isLastStep, safeStepIndex],
+  )
+
   const handleNext = useCallback(() => {
     if (isLastStep) return
-    if (uncheckedStepIngredients.length > 0) {
+    if (!isPreviewMode && uncheckedStepIngredients.length > 0) {
       setPendingConfirmAction('next')
       return
     }
     goToStep(safeStepIndex + 1)
-  }, [goToStep, isLastStep, safeStepIndex, uncheckedStepIngredients.length])
+  }, [goToStep, isLastStep, isPreviewMode, safeStepIndex, uncheckedStepIngredients.length])
 
   const handleFinishRecipe = useCallback(() => {
-    if (!isCompleted && uncheckedStepIngredients.length > 0) {
+    if (!isCompleted && !isPreviewMode && uncheckedStepIngredients.length > 0) {
       setPendingConfirmAction('finish')
       return
     }
     completeRecipe()
-  }, [completeRecipe, isCompleted, uncheckedStepIngredients.length])
+  }, [completeRecipe, isCompleted, isPreviewMode, uncheckedStepIngredients.length])
 
   const handleConfirmUncheckedAdvance = useCallback(() => {
     const action = pendingConfirmAction
@@ -203,19 +216,17 @@ export function CookingModeView({
       })
     }
 
-    if (action === 'next' && !isLastStep) {
-      goToStep(safeStepIndex + 1)
-    } else if (action === 'finish') {
-      completeRecipe()
+    advanceStepAction(action)
+  }, [advanceStepAction, pendingConfirmAction, uncheckedStepIngredients])
+
+  const handleEnterPreviewAndAdvance = useCallback(() => {
+    const action = pendingConfirmAction
+    setPendingConfirmAction(null)
+    setIsPreviewMode(true)
+    if (action) {
+      advanceStepAction(action)
     }
-  }, [
-    completeRecipe,
-    goToStep,
-    isLastStep,
-    pendingConfirmAction,
-    safeStepIndex,
-    uncheckedStepIngredients,
-  ])
+  }, [advanceStepAction, pendingConfirmAction])
 
   const toggleIngredient = useCallback((key: string) => {
     setCheckedIngredients((prev) => ({
@@ -403,9 +414,27 @@ export function CookingModeView({
                     />
                   }
                 >
-                  Ekran nie zgaśnie
+                  <span className="hidden sm:inline">Ekran nie zgaśnie</span>
+                  <span className="sm:hidden">Czuwa</span>
                 </GlassPill>
               )}
+
+              <GlassPill
+                as="button"
+                variant={isPreviewMode ? 'active' : 'surface'}
+                size="sm"
+                aria-pressed={isPreviewMode}
+                aria-label={
+                  isPreviewMode
+                    ? 'Wyłącz tryb podglądu (sprawdzaj składniki)'
+                    : 'Włącz tryb podglądu (przeklikaj kroki bez odhaczania składników)'
+                }
+                leftIcon={<Eye className="size-3.5" aria-hidden="true" />}
+                onClick={() => setIsPreviewMode((prev) => !prev)}
+                className="min-h-11 px-3 text-xs font-semibold sm:text-sm"
+              >
+                {isPreviewMode ? 'Podgląd wł.' : 'Podgląd'}
+              </GlassPill>
 
               {onUpdateRecipe && (
                 <GlassButton
@@ -465,16 +494,16 @@ export function CookingModeView({
             />
           </div>
 
-          {/* Liquid Dynamic Island — dokowana pływająca kapsuła aktywnych / dzwoniących timerów */}
+          {/* Nieduży, kompaktowy pasek przypiętych minutników pod postępem */}
           <AnimatePresence initial={false}>
             {islandTimers.length > 0 && (
               <motion.section
                 aria-label="Aktywne minutniki"
-                initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -10, scale: 0.97 }}
+                initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.97 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                className="flex flex-col gap-2 pt-0.5"
+                exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
+                transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                className="flex flex-col gap-1.5"
               >
                 {islandTimers.map((timer) => {
                   const isFinished = timer.status === 'finished'
@@ -482,21 +511,22 @@ export function CookingModeView({
                   const isCurrentStep = timer.stepIndex === safeStepIndex
 
                   return (
-                    <GlassPill
+                    <div
                       key={timer.id}
-                      variant="island"
-                      size="sm"
                       className={cn(
-                        'w-full flex-wrap justify-between gap-2 px-3 py-1.5',
-                        isFinished &&
-                          'border-emerald-400/60 bg-emerald-950/90 ring-2 ring-emerald-400/45 dark:bg-emerald-950/90',
+                        'flex min-h-9 w-full flex-nowrap items-center justify-between gap-1.5 rounded-full px-2.5 py-0.5',
+                        'backdrop-blur-2xl backdrop-saturate-180',
+                        'border text-stone-50 shadow-[0_6px_20px_rgba(0,0,0,0.24)]',
+                        isFinished
+                          ? 'border-emerald-400/60 bg-emerald-950/92 ring-1 ring-emerald-400/45'
+                          : 'border-white/15 bg-zinc-950/85 dark:bg-zinc-900/90',
                       )}
                     >
                       <button
                         type="button"
                         onClick={() => goToStep(timer.stepIndex)}
                         className={cn(
-                          'inline-flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-full px-2 text-left',
+                          'inline-flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-full px-1.5 text-left',
                           'transition-colors hover:bg-white/10',
                           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400',
                         )}
@@ -504,7 +534,7 @@ export function CookingModeView({
                         {isFinished ? (
                           <BellRing
                             className={cn(
-                              'size-4 shrink-0 text-emerald-300',
+                              'size-3.5 shrink-0 text-emerald-300',
                               !prefersReducedMotion && 'animate-bounce',
                             )}
                             aria-hidden="true"
@@ -513,18 +543,18 @@ export function CookingModeView({
                           <span
                             aria-hidden="true"
                             className={cn(
-                              'size-2.5 shrink-0 rounded-full',
+                              'size-2 shrink-0 rounded-full',
                               isPaused
                                 ? 'bg-stone-400'
-                                : 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]',
+                                : 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.85)]',
                             )}
                           />
                         )}
 
-                        <span className="truncate text-sm font-medium text-stone-100">
+                        <span className="truncate text-xs font-medium text-stone-200">
                           Krok {timer.stepNumber}
                           {!isCurrentStep && (
-                            <span className="ml-1.5 text-xs text-stone-300">• Przejdź</span>
+                            <span className="ml-1 text-[11px] text-stone-400">• Idź</span>
                           )}
                         </span>
 
@@ -532,23 +562,23 @@ export function CookingModeView({
                           className={cn(
                             'ml-auto shrink-0 font-semibold tabular-nums',
                             isFinished
-                              ? 'text-sm text-emerald-300'
-                              : 'text-base tracking-tight text-amber-300',
+                              ? 'text-xs text-emerald-300'
+                              : 'text-sm tracking-tight text-amber-300',
                           )}
                         >
                           {isFinished ? 'Gotowe!' : formatCountdown(timer.remainingSeconds)}
                         </span>
                       </button>
 
-                      <div className="flex shrink-0 items-center gap-1.5">
+                      <div className="flex shrink-0 items-center gap-1">
                         {timer.status === 'running' && (
                           <button
                             type="button"
                             aria-label={`Wstrzymaj minutnik kroku ${timer.stepNumber}`}
                             onClick={() => pauseTimer(timer.id)}
-                            className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-full bg-white/12 px-3 text-sm font-medium text-stone-50 transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                            className="inline-flex size-7 cursor-pointer items-center justify-center rounded-full bg-white/12 text-stone-100 transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                           >
-                            <Pause className="size-4" aria-hidden="true" />
+                            <Pause className="size-3.5" aria-hidden="true" />
                           </button>
                         )}
 
@@ -557,9 +587,9 @@ export function CookingModeView({
                             type="button"
                             aria-label={`Wznów minutnik kroku ${timer.stepNumber}`}
                             onClick={() => resumeTimer(timer.id)}
-                            className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-full bg-amber-500/30 px-3 text-sm font-medium text-amber-200 transition-colors hover:bg-amber-500/45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                            className="inline-flex size-7 cursor-pointer items-center justify-center rounded-full bg-amber-500/30 text-amber-200 transition-colors hover:bg-amber-500/45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                           >
-                            <Play className="size-4" aria-hidden="true" />
+                            <Play className="size-3.5" aria-hidden="true" />
                           </button>
                         )}
 
@@ -567,9 +597,9 @@ export function CookingModeView({
                           type="button"
                           aria-label={`Dodaj 1 minutę do minutnika kroku ${timer.stepNumber}`}
                           onClick={() => addMinute(timer.id)}
-                          className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-full bg-white/12 px-3 text-xs font-semibold text-stone-50 tabular-nums transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                          className="inline-flex h-7 cursor-pointer items-center justify-center rounded-full bg-white/12 px-2 text-[11px] font-semibold text-stone-100 tabular-nums transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
                         >
-                          +1 min
+                          +1m
                         </button>
 
                         <button
@@ -581,23 +611,23 @@ export function CookingModeView({
                           }
                           onClick={() => dismissTimer(timer.id)}
                           className={cn(
-                            'inline-flex min-h-11 cursor-pointer items-center justify-center gap-1.5 rounded-full px-3 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400',
+                            'inline-flex h-7 cursor-pointer items-center justify-center gap-1 rounded-full text-[11px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400',
                             isFinished
-                              ? 'bg-emerald-500 text-zinc-950 hover:bg-emerald-400'
-                              : 'min-w-11 bg-white/10 text-stone-200 hover:bg-white/20',
+                              ? 'bg-emerald-500 px-2.5 text-zinc-950 hover:bg-emerald-400'
+                              : 'w-7 bg-white/10 text-stone-200 hover:bg-white/20',
                           )}
                         >
                           {isFinished ? (
                             <>
-                              <BellOff className="size-4" aria-hidden="true" />
+                              <BellOff className="size-3.5" aria-hidden="true" />
                               <span>Wycisz</span>
                             </>
                           ) : (
-                            <X className="size-4" aria-hidden="true" />
+                            <X className="size-3.5" aria-hidden="true" />
                           )}
                         </button>
                       </div>
-                    </GlassPill>
+                    </div>
                   )
                 })}
               </motion.section>
@@ -612,7 +642,7 @@ export function CookingModeView({
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
-        className="mx-auto flex w-full max-w-3xl flex-1 touch-pan-y flex-col gap-4 px-4 pt-4 pb-24 sm:px-6"
+        className="mx-auto flex w-full max-w-3xl flex-1 touch-pan-y flex-col gap-4 px-4 pt-4 pb-32 sm:px-6"
       >
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
@@ -961,19 +991,19 @@ export function CookingModeView({
         </AnimatePresence>
       </main>
 
-      {/* Dolna nawigacja (kompaktowa wysokość — ok. połowa poprzedniej) */}
+      {/* Dolna nawigacja (ergonomiczna wysokość 56px — 2x większa dla wygodnej obsługi w kuchni) */}
       <nav
         aria-label="Nawigacja kroków gotowania"
         className="pointer-events-none fixed inset-x-0 bottom-0 z-30 border-t border-white/40 bg-[#fbf8f3]/80 backdrop-blur-2xl backdrop-saturate-150 dark:border-white/10 dark:bg-zinc-950/80"
       >
-        <div className="pointer-events-auto mx-auto grid w-full max-w-3xl grid-cols-2 gap-2.5 px-4 pt-2 pb-[max(0.625rem,env(safe-area-inset-bottom))] sm:px-6">
+        <div className="pointer-events-auto mx-auto grid w-full max-w-3xl grid-cols-2 gap-3 px-4 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
           <GlassButton
             variant="secondary"
-            size="sm"
+            size="lg"
             disabled={isFirstStep}
-            leftIcon={<ChevronLeft className="size-4" aria-hidden="true" />}
+            leftIcon={<ChevronLeft className="size-5" aria-hidden="true" />}
             onClick={handlePrevious}
-            className="h-7 !min-h-7 rounded-xl px-3 py-0.5 text-xs sm:text-sm"
+            className="h-14 !min-h-14 rounded-2xl px-4 py-2 text-sm font-semibold sm:text-base"
           >
             Poprzedni
           </GlassButton>
@@ -981,19 +1011,19 @@ export function CookingModeView({
           {isLastStep ? (
             <GlassButton
               variant="primary"
-              size="sm"
+              size="lg"
               onClick={handleFinishRecipe}
-              className="h-7 !min-h-7 rounded-xl px-3 py-0.5 text-xs sm:text-sm"
+              className="h-14 !min-h-14 rounded-2xl px-4 py-2 text-sm font-semibold sm:text-base"
             >
               Gotowe! Smacznego 🎉
             </GlassButton>
           ) : (
             <GlassButton
               variant="primary"
-              size="sm"
-              rightIcon={<ChevronRight className="size-4" aria-hidden="true" />}
+              size="lg"
+              rightIcon={<ChevronRight className="size-5" aria-hidden="true" />}
               onClick={handleNext}
-              className="h-7 !min-h-7 rounded-xl px-3 py-0.5 text-xs sm:text-sm"
+              className="h-14 !min-h-14 rounded-2xl px-4 py-2 text-sm font-semibold sm:text-base"
             >
               Następny krok
             </GlassButton>
@@ -1006,10 +1036,10 @@ export function CookingModeView({
         isOpen={pendingConfirmAction !== null}
         onClose={() => setPendingConfirmAction(null)}
         title="Nie wszystkie składniki odhaczone"
-        subtitle="Upewnij się przed przejściem dalej, że poniższe składniki trafiły już do potrawy:"
+        subtitle="Upewnij się przed przejściem dalej, że poniższe składniki trafiły już do potrawy — albo włącz tryb podglądu, żeby przeklikać przepis bez odhaczania."
         size="sm"
         footer={
-          <>
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
             <GlassButton
               variant="ghost"
               size="md"
@@ -1017,6 +1047,14 @@ export function CookingModeView({
               onClick={() => setPendingConfirmAction(null)}
             >
               Wróć i zaznacz
+            </GlassButton>
+            <GlassButton
+              variant="secondary"
+              size="md"
+              leftIcon={<Eye className="size-4" aria-hidden="true" />}
+              onClick={handleEnterPreviewAndAdvance}
+            >
+              Przeklikaj jako podgląd
             </GlassButton>
             <GlassButton
               variant="primary"
@@ -1027,7 +1065,7 @@ export function CookingModeView({
                 ? 'Tak, dodane — zakończ'
                 : 'Tak, dodane — dalej'}
             </GlassButton>
-          </>
+          </div>
         }
       >
         <ul className="space-y-2 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-3.5 text-sm dark:border-amber-400/20 dark:bg-amber-500/12">
