@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { X } from 'lucide-react'
+import { useScrollEdges } from '../../hooks/useScrollEdges'
 import { cn } from './cn'
 
 export type GlassModalSize = 'sm' | 'md' | 'lg'
@@ -100,8 +101,14 @@ export function GlassModal({
   className,
 }: GlassModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
+  const bodyScrollRef = useRef<HTMLDivElement>(null)
   const headingId = useId()
   const onCloseRef = useRef(onClose)
+  const { canScrollStart: canScrollUp, canScrollEnd: canScrollDown } = useScrollEdges(
+    bodyScrollRef,
+    'vertical',
+    isOpen,
+  )
 
   useEffect(() => {
     onCloseRef.current = onClose
@@ -213,20 +220,26 @@ export function GlassModal({
       aria-labelledby={title ? headingId : undefined}
       aria-label={!title ? (ariaLabel ?? 'Okno dialogowe') : undefined}
       className={cn(
-        'glass-modal m-auto w-[calc(100%-2rem)] rounded-3xl p-0 text-inherit',
+        'glass-modal m-auto w-[calc(100%-1.5rem)] overflow-hidden rounded-3xl p-0 text-inherit sm:w-[calc(100%-2rem)]',
         'backdrop-blur-2xl backdrop-saturate-150',
         'bg-white/80 dark:bg-zinc-900/80',
         'border border-white/50 dark:border-white/15',
         'shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.7),0_24px_64px_-12px_rgba(28,25,23,0.28)]',
         'dark:shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.14),0_28px_72px_-12px_rgba(0,0,0,0.7)]',
-        'max-h-[min(86dvh,calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-2rem),46rem)] overflow-y-auto',
         SIZE_CLASSES[size],
         className,
       )}
     >
-      <div className="flex flex-col gap-5 p-5 sm:p-6">
+      <div className="flex max-h-[min(86dvh,calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-2rem),46rem)] flex-col overflow-hidden">
         {(title || showCloseButton) && (
-          <header className="flex items-start justify-between gap-4">
+          <header
+            className={cn(
+              'relative z-10 flex shrink-0 items-start justify-between gap-4 border-b px-5 pt-5 pb-3.5 transition-colors duration-200 sm:px-6 sm:pt-6',
+              canScrollUp
+                ? 'border-stone-900/10 dark:border-white/12'
+                : 'border-transparent',
+            )}
+          >
             <div className="min-w-0 flex-1">
               {title && (
                 <h2
@@ -250,8 +263,8 @@ export function GlassModal({
                 aria-label="Zamknij okno"
                 className={cn(
                   'inline-flex size-11 shrink-0 items-center justify-center rounded-full',
-                  'bg-white/60 hover:bg-white/85 text-stone-700',
-                  'dark:bg-white/10 dark:hover:bg-white/20 dark:text-stone-200',
+                  'bg-white/60 text-stone-700 hover:bg-white/85',
+                  'dark:bg-white/10 dark:text-stone-200 dark:hover:bg-white/20',
                   'border border-white/45 dark:border-white/15',
                   'transition-colors duration-150',
                   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 dark:focus-visible:outline-amber-400',
@@ -263,10 +276,28 @@ export function GlassModal({
           </header>
         )}
 
-        <div className="text-stone-800 dark:text-stone-200">{children}</div>
+        <div
+          ref={bodyScrollRef}
+          className={cn(
+            'glass-scroll-fade-y min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 text-stone-800 sm:px-6 dark:text-stone-200',
+            !(title || showCloseButton) ? 'pt-5 sm:pt-6' : 'pt-1',
+            footer ? 'pb-4' : 'pb-5 sm:pb-6',
+            canScrollUp && 'can-scroll-up',
+            canScrollDown && 'can-scroll-down',
+          )}
+        >
+          <div>{children}</div>
+        </div>
 
         {footer && (
-          <footer className="flex flex-wrap items-center justify-end gap-3 border-t border-stone-900/10 pt-4 dark:border-white/10">
+          <footer
+            className={cn(
+              'relative z-10 flex shrink-0 flex-wrap items-center justify-end gap-3 border-t px-5 pt-3.5 pb-5 sm:px-6 sm:pb-6',
+              canScrollDown
+                ? 'border-stone-900/12 dark:border-white/15'
+                : 'border-stone-900/8 dark:border-white/10',
+            )}
+          >
             {footer}
           </footer>
         )}

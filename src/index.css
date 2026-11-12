@@ -248,3 +248,93 @@ dialog.glass-modal[open]:where(:not([data-closing])) {
     pointer-events: none;
   }
 }
+
+/* Smooth edge fade masks for scrollable translucent Liquid Glass containers */
+@property --scroll-fade-top {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --scroll-fade-bottom {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --scroll-fade-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --scroll-fade-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+.glass-scroll-fade-y {
+  scroll-padding-block: 1.75rem;
+  transition:
+    --scroll-fade-top 180ms ease,
+    --scroll-fade-bottom 180ms ease;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--scroll-fade-top),
+    #000 calc(100% - var(--scroll-fade-bottom)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--scroll-fade-top),
+    #000 calc(100% - var(--scroll-fade-bottom)),
+    transparent 100%
+  );
+}
+
+.glass-scroll-fade-y.can-scroll-up {
+  --scroll-fade-top: 1.5rem;
+}
+
+.glass-scroll-fade-y.can-scroll-down {
+  --scroll-fade-bottom: 1.75rem;
+}
+
+.glass-scroll-fade-x {
+  scroll-padding-inline: 1.5rem;
+  transition:
+    --scroll-fade-start 180ms ease,
+    --scroll-fade-end 180ms ease;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--scroll-fade-start),
+    #000 calc(100% - var(--scroll-fade-end)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--scroll-fade-start),
+    #000 calc(100% - var(--scroll-fade-end)),
+    transparent 100%
+  );
+}
+
+.glass-scroll-fade-x.can-scroll-start {
+  --scroll-fade-start: 1.5rem;
+}
+
+.glass-scroll-fade-x.can-scroll-end {
+  --scroll-fade-end: 1.75rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-scroll-fade-y,
+  .glass-scroll-fade-x {
+    transition: none;
+  }
+}

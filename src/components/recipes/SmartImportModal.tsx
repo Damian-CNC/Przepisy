@@ -27,6 +27,7 @@ import {
   Upload,
   Wand2,
 } from 'lucide-react'
+import { useScrollEdges } from '../../hooks/useScrollEdges'
 import { useVoiceRecognition } from '../../hooks/useVoiceRecognition'
 import { prepareImageForAi, uploadRecipeImage } from '../../lib/imageCompression'
 import {
@@ -150,6 +151,7 @@ export function SmartImportModal({
   onAutoAnalyzeConsumed,
 }: SmartImportModalProps) {
   const baseId = useId()
+  const tablistRef = useRef<HTMLDivElement>(null)
   const tabRefs = useRef<Partial<Record<ImportTabId, HTMLButtonElement | null>>>({})
   const photoInputRef = useRef<HTMLInputElement>(null)
   const manualCoverInputRef = useRef<HTMLInputElement>(null)
@@ -164,6 +166,11 @@ export function SmartImportModal({
   const prefersReducedMotion = useReducedMotion()
 
   const [activeTab, setActiveTab] = useState<ImportTabId>('discover')
+  const { canScrollStart: canTabsScrollStart, canScrollEnd: canTabsScrollEnd } = useScrollEdges(
+    tablistRef,
+    'horizontal',
+    isOpen ? activeTab : 'closed',
+  )
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   // Zakładka 1: Szef Kuchni AI
@@ -1022,15 +1029,23 @@ export function SmartImportModal({
           /* 4 zakładki w szklanej kapsule (jednowierszowy przewijany pasek) */
           <>
             <div
-              role="tablist"
-              aria-label="Sposób dodania przepisu"
               className={cn(
-                'flex flex-nowrap items-center gap-1.5 overflow-x-auto rounded-full p-1.5',
+                'overflow-hidden rounded-full p-1.5',
                 'backdrop-blur-2xl backdrop-saturate-150',
                 'bg-stone-900/5 dark:bg-white/5',
                 'border border-white/45 dark:border-white/15',
               )}
             >
+              <div
+                ref={tablistRef}
+                role="tablist"
+                aria-label="Sposób dodania przepisu"
+                className={cn(
+                  'glass-scroll-fade-x flex flex-nowrap items-center gap-1.5 overflow-x-auto',
+                  canTabsScrollStart && 'can-scroll-start',
+                  canTabsScrollEnd && 'can-scroll-end',
+                )}
+              >
               {TABS.map((tab, index) => {
                 const isSelected = activeTab === tab.id
                 const TabIcon = tab.Icon
@@ -1068,6 +1083,7 @@ export function SmartImportModal({
                   </button>
                 )
               })}
+              </div>
             </div>
 
             {/* Panel 1: Szef Kuchni AI */}
