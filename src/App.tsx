@@ -26,6 +26,7 @@ import {
 } from './components/ui'
 import { useAuth } from './hooks/useAuth'
 import { useRecipes } from './hooks/useRecipes'
+import { checkAndApplyPwaUpdate } from './lib/pwaUpdate'
 import {
   consumePendingSharePayload,
   parseShareTargetParams,
@@ -83,6 +84,7 @@ export function App() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false)
   const [cookingSession, setCookingSession] = useState<CookingSessionState | null>(null)
   const [activeShareImport, setActiveShareImport] = useState<ActiveShareImportState | null>(null)
   const [pendingShareNotice, setPendingShareNotice] = useState<SharedImportPayload | null>(() => {
@@ -192,6 +194,18 @@ export function App() {
     }
   }
 
+  const handleRefreshAll = async () => {
+    if (isManualRefreshing) return
+    setIsManualRefreshing(true)
+    try {
+      await Promise.all([refresh(), checkAndApplyPwaUpdate()])
+    } finally {
+      setIsManualRefreshing(false)
+    }
+  }
+
+  const isRefreshBusy = isManualRefreshing || (isRecipesLoading && recipes.length > 0)
+
   return (
     <MotionConfig reducedMotion="user">
       <div className="relative min-h-dvh text-stone-900 dark:text-stone-50">
@@ -296,17 +310,15 @@ export function App() {
                       <GlassButton
                         variant="secondary"
                         size="md"
-                        aria-label="Odśwież listę przepisów"
-                        disabled={isRecipesLoading && recipes.length > 0}
-                        onClick={() => void refresh()}
+                        aria-label="Odśwież przepisy i sprawdź aktualizację aplikacji"
+                        disabled={isRefreshBusy}
+                        onClick={() => void handleRefreshAll()}
                         className="size-11 !gap-0 !px-0 sm:hidden"
                       >
                         <RefreshCw
                           className={cn(
                             'size-4.5',
-                            isRecipesLoading &&
-                              recipes.length > 0 &&
-                              'animate-spin motion-reduce:animate-none',
+                            isRefreshBusy && 'animate-spin motion-reduce:animate-none',
                           )}
                           aria-hidden="true"
                         />
@@ -316,8 +328,8 @@ export function App() {
                       <GlassButton
                         variant="secondary"
                         size="md"
-                        isLoading={isRecipesLoading && recipes.length > 0}
-                        onClick={() => void refresh()}
+                        isLoading={isRefreshBusy}
+                        onClick={() => void handleRefreshAll()}
                         leftIcon={<RefreshCw className="size-4" aria-hidden="true" />}
                         className="hidden sm:inline-flex"
                       >
