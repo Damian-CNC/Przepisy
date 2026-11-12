@@ -485,11 +485,14 @@ Deno.serve(async (req: Request) => {
 Jesteś profesjonalnym szefem kuchni i tłumaczem kulinarnym.
 Przeanalizuj dostarczony materiał (tekst ze strony/Instagrama i/lub zdjęcie).
 1. Wyciągnij kompletny przepis kulinarny.
-2. PRZETŁUMACZ CAŁOŚĆ NA JĘZYK POLSKI.
+2. PRZETŁUMACZ CAŁOŚĆ NA JĘZYK POLSKI (jeśli już jest po polsku, zachowaj dokładne ilości i nazwy).
 3. Przelicz wszystkie jednostki anglosaskie (cups, oz, lbs, fahrenheit) na polskie jednostki metryczne (g, ml, szt., łyżki, łyżeczki, °C).
 4. Podziel przygotowanie na logiczne, pojedyncze kroki w stylu Thermomixa.
 5. KLUCZOWE: W każdym kroku w polu "step_ingredients" wypisz DOKŁADNIE te składniki i ich ilości, które są dodawane lub używane w TYM konkretnym kroku (aby użytkownik podczas gotowania nie musiał wracać do ogólnej listy składników).
 6. Jeśli w kroku występuje pieczenie, gotowanie, odstawienie lub smażenie przez określony czas, przelicz ten czas na sekundy i wpisz w pole "timer_seconds" (np. 10 minut = 600). Jeśli brak czasu, wpisz 0.
+7. Jeśli składnik nie ma podanej dokładnej ilości (np. "olej do posmarowania", "sól do smaku"), ustaw amount na 0 i wpisz w unit np. "wg uznania" lub "do posmarowania" — NIGDY nie wymyślaj na siłę "1 szt.".
+8. Jeśli składnik ma podany zamiennik lub alternatywę (np. "15 g świeżych drożdży lub 8 g suszonych"), zachowaj ten dopisek w polu name (np. "świeże drożdże (lub 8 g suszonych)").
+9. Jeśli przepis ma wyraźne sekcje (np. "Zaparka", "Ciasto", "Krem", "Polewa") i ten sam składnik występuje w więcej niż jednej sekcji, dopisz sekcję w nawiasie do pola name (np. "mąka pszenna T750 (zaparka)" oraz "mąka pszenna T750 (ciasto)").
 `.trim();
 
     const parts: GeminiPart[] = [{ text: prompt }];
