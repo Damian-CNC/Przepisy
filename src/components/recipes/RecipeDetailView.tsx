@@ -17,9 +17,14 @@ import {
   Trash2,
   Users,
 } from 'lucide-react'
-import { formatScaledAmount, groupIngredientsBySection } from '../../lib/recipesApi'
-import type { RecipeRow } from '../../lib/supabase'
+import {
+  formatScaledAmount,
+  groupIngredientsBySection,
+  toSafeHttpUrl,
+} from '../../lib/recipesApi'
+import type { RecipeRow, RecipeUpdate } from '../../lib/supabase'
 import { GlassButton, GlassCard, GlassModal, GlassPill, cn } from '../ui'
+import { RecipeVoiceEditor } from './RecipeVoiceEditor'
 import { formatTimerLabel, getSourceMeta } from './recipeMeta'
 
 export interface RecipeDetailViewProps {
@@ -27,6 +32,7 @@ export interface RecipeDetailViewProps {
   onBack: () => void
   onToggleFavorite: (id: string) => void | Promise<unknown>
   onUpdatePhoto: (id: string, file: File) => Promise<RecipeRow>
+  onUpdateRecipe: (id: string, payload: RecipeUpdate) => Promise<RecipeRow>
   onRemoveRecipe: (id: string) => Promise<void>
   onStartCooking: (recipe: RecipeRow, targetServings: number) => void
 }
@@ -44,6 +50,7 @@ export function RecipeDetailView({
   onBack,
   onToggleFavorite,
   onUpdatePhoto,
+  onUpdateRecipe,
   onRemoveRecipe,
   onStartCooking,
 }: RecipeDetailViewProps) {
@@ -54,6 +61,7 @@ export function RecipeDetailView({
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [isVoiceEditorOpen, setIsVoiceEditorOpen] = useState(false)
 
   const photoInputRef = useRef<HTMLInputElement>(null)
   const heroWrapperRef = useRef<HTMLDivElement>(null)
@@ -77,6 +85,7 @@ export function RecipeDetailView({
   const totalMinutes = prepMinutes + cookMinutes
   const isFavorite = Boolean(recipe.is_favorite)
   const { label: sourceLabel, Icon: SourceIcon } = getSourceMeta(recipe.source_platform)
+  const safeSourceUrl = toSafeHttpUrl(recipe.source_url)
 
   const handlePhotoSelect = async (file: File | undefined) => {
     if (!file || isUpdatingPhoto) return
@@ -114,8 +123,20 @@ export function RecipeDetailView({
     }
   }
 
+  const handleApplyVoiceChanges = async (id: string, updatedFields: RecipeUpdate) => {
+    const updated = await onUpdateRecipe(id, updatedFields)
+    if (
+      typeof updated.servings === 'number' &&
+      updated.servings > 0 &&
+      updated.servings !== recipe.servings
+    ) {
+      setTargetServings(updated.servings)
+    }
+    return updated
+  }
+
   return (
-    <div className="relative pb-32">
+    <div className="relative pb-36">
       {/* Zdjęcie nagłówkowe z paralaksą przy przewijaniu */}
       <div
         ref={heroWrapperRef}
@@ -301,9 +322,9 @@ export function RecipeDetailView({
                     <span className="tabular-nums">Obróbka: {cookMinutes} min</span>
                   </GlassPill>
                 )}
-                {recipe.source_url && (
+                {safeSourceUrl && (
                   <a
-                    href={recipe.source_url}
+                    href={safeSourceUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-white/40 bg-white/55 px-3.5 py-1.5 text-xs font-medium text-amber-800 backdrop-blur-xl hover:bg-white/80 dark:border-white/15 dark:bg-zinc-800/60 dark:text-amber-300"
@@ -532,6 +553,14 @@ export function RecipeDetailView({
           </section>
         </div>
       </main>
+
+      {/* Pływający asystent głosowej edycji przepisu (nad dolnym CTA) */}
+      <RecipeVoiceEditor
+        recipe={recipe}
+        isOpen={isVoiceEditorOpen}
+        onOpenChange={setIsVoiceEditorOpen}
+        onApplyChanges={handleApplyVoiceChanges}
+      />
 
       {/* Pływający przycisk na dole ekranu (Thumb Zone) */}
       <div className="pointer-events-none fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 flex justify-center px-4">

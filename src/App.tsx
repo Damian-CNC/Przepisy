@@ -74,6 +74,7 @@ export function App() {
     refresh,
     toggleFavorite,
     addRecipe,
+    updateRecipeItem,
     removeRecipe,
     updatePhoto,
   } = useRecipes({ enabled: Boolean(user) })
@@ -259,6 +260,7 @@ export function App() {
                   recipe={activeCookingRecipe}
                   targetServings={cookingSession.targetServings}
                   onExit={() => setCookingSession(null)}
+                  onUpdateRecipe={updateRecipeItem}
                 />
               </Suspense>
             ) : selectedRecipe ? (
@@ -268,6 +270,7 @@ export function App() {
                 onBack={() => setSelectedRecipeId(null)}
                 onToggleFavorite={toggleFavorite}
                 onUpdatePhoto={updatePhoto}
+                onUpdateRecipe={updateRecipeItem}
                 onRemoveRecipe={removeRecipe}
                 onStartCooking={(recipe, targetServings) =>
                   setCookingSession({ recipe, targetServings })

@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
-export type SourcePlatform = 'instagram' | 'web' | 'photo' | 'manual'
+export type SourcePlatform = 'instagram' | 'web' | 'photo' | 'manual' | 'ai'
 
 export type RecipeCategory =
   | 'Śniadanie'

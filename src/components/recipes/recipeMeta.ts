@@ -1,5 +1,5 @@
 import type { ComponentType, SVGProps } from 'react'
-import { Camera, Globe, PenLine } from 'lucide-react'
+import { Camera, Globe, PenLine, Sparkles } from 'lucide-react'
 import type { RecipeCategory, SourcePlatform } from '../../lib/supabase'
 import { InstagramIcon } from './InstagramIcon'
 
@@ -23,6 +23,7 @@ const SOURCE_BADGE_MAP: Record<SourcePlatform, SourceBadgeMeta> = {
   web: { label: 'WWW', Icon: Globe },
   photo: { label: 'Zdjęcie', Icon: Camera },
   manual: { label: 'Własny', Icon: PenLine },
+  ai: { label: 'Szef AI', Icon: Sparkles },
 }
 
 export function getSourceMeta(platform: SourcePlatform | null): SourceBadgeMeta {

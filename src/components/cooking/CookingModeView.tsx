@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Lightbulb,
+  Mic,
   Pause,
   Play,
   Plus,
@@ -21,13 +22,15 @@ import {
 import { useCookingTimers, type CookingTimer } from '../../hooks/useCookingTimers'
 import { useWakeLock } from '../../hooks/useWakeLock'
 import { formatScaledAmount } from '../../lib/recipesApi'
-import type { RecipeRow, RecipeStep } from '../../lib/supabase'
+import type { RecipeRow, RecipeStep, RecipeUpdate } from '../../lib/supabase'
+import { RecipeVoiceEditor } from '../recipes/RecipeVoiceEditor'
 import { AmbientBackground, GlassButton, GlassCard, GlassModal, GlassPill, cn } from '../ui'
 
 export interface CookingModeViewProps {
   recipe: RecipeRow
   targetServings: number
   onExit: () => void
+  onUpdateRecipe?: (id: string, payload: RecipeUpdate) => Promise<RecipeRow>
 }
 
 const SWIPE_MIN_DISTANCE_PX = 64
@@ -59,7 +62,12 @@ function isInteractiveSwipeTarget(target: EventTarget | null): boolean {
  * Pełnoekranowy tryb gotowania „Krok po kroku” (Thermomix Experience) z blokadą
  * wygaszania ekranu (Wake Lock), pływającą wyspą timerów i dużymi celami dotykowymi.
  */
-export function CookingModeView({ recipe, targetServings, onExit }: CookingModeViewProps) {
+export function CookingModeView({
+  recipe,
+  targetServings,
+  onExit,
+  onUpdateRecipe,
+}: CookingModeViewProps) {
   const steps = useMemo<RecipeStep[]>(() => recipe.steps ?? [], [recipe.steps])
   const totalSteps = steps.length
   const baseServings = recipe.servings && recipe.servings > 0 ? recipe.servings : 2
@@ -69,6 +77,7 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
   const [checkedIngredients, setCheckedIngredients] = useState<Record<string, boolean>>({})
   const [isCompleted, setIsCompleted] = useState(false)
   const [pendingConfirmAction, setPendingConfirmAction] = useState<'next' | 'finish' | null>(null)
+  const [isVoiceEditorOpen, setIsVoiceEditorOpen] = useState(false)
 
   const prefersReducedMotion = useReducedMotion()
   const { isActive: isWakeLockActive } = useWakeLock(true)
@@ -218,7 +227,7 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
   // Keyboard navigation: ArrowLeft / ArrowRight / Escape
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (pendingConfirmAction !== null) return
+      if (pendingConfirmAction !== null || isVoiceEditorOpen) return
       if (event.altKey || event.ctrlKey || event.metaKey) return
       const target = event.target
       if (
@@ -249,7 +258,7 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleExit, handleNext, handlePrevious, pendingConfirmAction])
+  }, [handleExit, handleNext, handlePrevious, isVoiceEditorOpen, pendingConfirmAction])
 
   const handlePointerDown = (event: React.PointerEvent<HTMLElement>) => {
     if (event.button !== 0 || isInteractiveSwipeTarget(event.target)) {
@@ -396,6 +405,25 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
                 >
                   Ekran nie zgaśnie
                 </GlassPill>
+              )}
+
+              {onUpdateRecipe && (
+                <GlassButton
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  aria-label="Edytuj przepis z AI"
+                  onClick={() => setIsVoiceEditorOpen(true)}
+                  leftIcon={
+                    <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300">
+                      <Mic className="size-3.5" aria-hidden="true" />
+                      <Sparkles className="size-3.5" aria-hidden="true" />
+                    </span>
+                  }
+                  className="min-h-11 rounded-full px-3.5 text-xs font-semibold sm:text-sm"
+                >
+                  Edytuj z AI
+                </GlassButton>
               )}
 
               <GlassPill variant="surface" size="sm">
@@ -1016,6 +1044,16 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
           ))}
         </ul>
       </GlassModal>
+
+      {onUpdateRecipe && (
+        <RecipeVoiceEditor
+          recipe={recipe}
+          isOpen={isVoiceEditorOpen}
+          onOpenChange={setIsVoiceEditorOpen}
+          onApplyChanges={onUpdateRecipe}
+          hideFloatingTrigger
+        />
+      )}
     </div>
   )
 }

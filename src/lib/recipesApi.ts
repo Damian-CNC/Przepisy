@@ -30,6 +30,7 @@ const VALID_SOURCE_PLATFORMS: ReadonlySet<SourcePlatform> = new Set([
   'web',
   'photo',
   'manual',
+  'ai',
 ])
 
 function assertSupabaseReady(): void {
@@ -60,6 +61,19 @@ function toNullableTrimmedString(value: unknown): string | null {
   if (typeof value !== 'string') return null
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : null
+}
+
+/**
+ * Zwraca bezpieczny adres URL (`http:` lub `https:`), odrzucając schematy typu `javascript:`.
+ */
+export function toSafeHttpUrl(rawUrl: string | null | undefined): string | null {
+  if (!rawUrl) return null
+  try {
+    const parsed = new URL(rawUrl.trim())
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : null
+  } catch {
+    return null
+  }
 }
 
 function inferSourcePlatform(
@@ -177,64 +191,62 @@ function normalizeNutrition(raw: unknown): RecipeNutrition {
 
 const IMPORT_TIMEOUT_MS = 45_000
 
-/**
- * Wywołuje Edge Function `import-recipe` z twardym limitem czasu 45 s oraz obsługą
- * anulowania (`AbortSignal`) i normalizuje wynik do bezpiecznego obiektu `RecipeInsert`.
- */
-export async function importRecipeWithAi(payload: ImportRecipePayload): Promise<RecipeInsert> {
+interface InvokeEdgeFunctionOptions {
+  signal?: AbortSignal
+  timeoutMs?: number
+  authErrorMsg?: string
+  timeoutErrorMsg?: string
+}
+
+async function invokeEdgeFunction<TResponse>(
+  functionName: string,
+  body: unknown,
+  options?: InvokeEdgeFunctionOptions,
+): Promise<TResponse> {
   assertSupabaseReady()
-
-  const trimmedPayload = {
-    url: payload.url?.trim() || undefined,
-    rawText: payload.rawText?.trim() || undefined,
-    imageBase64: payload.imageBase64?.trim() || undefined,
-    mimeType: payload.mimeType?.trim() || undefined,
-  }
-
-  if (!trimmedPayload.url && !trimmedPayload.rawText && !trimmedPayload.imageBase64) {
-    throw new Error('Podaj link do przepisu, tekst albo wybierz zdjęcie potrawy.')
-  }
 
   const { url: supabaseUrl, anonKey } = getSupabasePublicConfig()
   const { data: sessionData } = await supabase.auth.getSession()
   const accessToken = sessionData.session?.access_token
 
+  const timeoutMs = options?.timeoutMs ?? IMPORT_TIMEOUT_MS
   const controller = new AbortController()
   let timedOut = false
 
   const onExternalAbort = () => controller.abort()
-  if (payload.signal) {
-    if (payload.signal.aborted) {
-      throw new Error('Analiza została przerwana.')
+  if (options?.signal) {
+    if (options.signal.aborted) {
+      throw new Error('Operacja została przerwana.')
     }
-    payload.signal.addEventListener('abort', onExternalAbort, { once: true })
+    options.signal.addEventListener('abort', onExternalAbort, { once: true })
   }
 
   const timeoutId = window.setTimeout(() => {
     timedOut = true
     controller.abort()
-  }, IMPORT_TIMEOUT_MS)
+  }, timeoutMs)
 
   let response: Response
   try {
-    response = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/functions/v1/import-recipe`, {
+    response = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/functions/v1/${functionName}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         apikey: anonKey,
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
-      body: JSON.stringify(trimmedPayload),
+      body: JSON.stringify(body),
       signal: controller.signal,
     })
   } catch (err) {
     if (timedOut) {
       throw new Error(
-        'Przetwarzanie trwało zbyt długo (ponad 45 s). Wklej opis rolki ręcznie poniżej lub użyj zakładki „Ze zdjęcia / Zrzutu”.',
+        options?.timeoutErrorMsg ??
+          'Przetwarzanie trwało zbyt długo (ponad 45 s). Spróbuj ponownie.',
       )
     }
-    if (payload.signal?.aborted) {
-      throw new Error('Analiza została anulowana.')
+    if (options?.signal?.aborted) {
+      throw new Error('Operacja została anulowana.')
     }
     throw new Error(
       err instanceof Error && err.message
@@ -243,7 +255,7 @@ export async function importRecipeWithAi(payload: ImportRecipePayload): Promise<
     )
   } finally {
     window.clearTimeout(timeoutId)
-    payload.signal?.removeEventListener('abort', onExternalAbort)
+    options?.signal?.removeEventListener('abort', onExternalAbort)
   }
 
   let data: unknown = null
@@ -264,7 +276,10 @@ export async function importRecipeWithAi(payload: ImportRecipePayload): Promise<
       throw new Error(serverMsg)
     }
     if (response.status === 401 || response.status === 403) {
-      throw new Error('Brak uprawnień do importu AI. Zaloguj się ponownie i spróbuj jeszcze raz.')
+      throw new Error(
+        options?.authErrorMsg ??
+          'Brak uprawnień do asystenta AI. Zaloguj się ponownie i spróbuj jeszcze raz.',
+      )
     }
     if (response.status === 429 || response.status === 503) {
       throw new Error('Asystent AI jest chwilowo przeciążony. Spróbuj ponownie za kilkanaście sekund.')
@@ -281,19 +296,32 @@ export async function importRecipeWithAi(payload: ImportRecipePayload): Promise<
     throw new Error(envelope.error.trim())
   }
 
-  const rawRecipe =
-    envelope.recipe && typeof envelope.recipe === 'object'
-      ? (envelope.recipe as Record<string, unknown>)
-      : envelope
+  return data as TResponse
+}
 
+function extractRawRecipeRecord(envelope: Record<string, unknown>): Record<string, unknown> {
+  return envelope.recipe && typeof envelope.recipe === 'object'
+    ? (envelope.recipe as Record<string, unknown>)
+    : envelope
+}
+
+function normalizeAiRecipeInsert(
+  rawRecipe: Record<string, unknown>,
+  defaults: {
+    sourceUrl?: string | null
+    sourcePlatform: SourcePlatform
+  },
+): RecipeInsert {
   const title = toNullableTrimmedString(rawRecipe.title) ?? 'Nowy przepis'
   const category = (toNullableTrimmedString(rawRecipe.category) ?? 'Obiad') as RecipeCategory
 
   return {
     title,
     description: toNullableTrimmedString(rawRecipe.description),
-    source_url: toNullableTrimmedString(rawRecipe.source_url) ?? trimmedPayload.url ?? null,
-    source_platform: inferSourcePlatform(rawRecipe.source_platform, trimmedPayload),
+    source_url:
+      toSafeHttpUrl(toNullableTrimmedString(rawRecipe.source_url)) ??
+      toSafeHttpUrl(defaults.sourceUrl),
+    source_platform: defaults.sourcePlatform,
     image_url: toNullableTrimmedString(rawRecipe.image_url),
     prep_time_minutes: toNonNegativeInt(rawRecipe.prep_time_minutes, 0, 0),
     cook_time_minutes: toNonNegativeInt(rawRecipe.cook_time_minutes, 0, 0),
@@ -304,6 +332,484 @@ export async function importRecipeWithAi(payload: ImportRecipePayload): Promise<
     ingredients: normalizeIngredients(rawRecipe.ingredients),
     steps: normalizeSteps(rawRecipe.steps),
     nutrition: normalizeNutrition(rawRecipe.nutrition),
+  }
+}
+
+/**
+ * Wywołuje Edge Function `import-recipe` z twardym limitem czasu 45 s oraz obsługą
+ * anulowania (`AbortSignal`) i normalizuje wynik do bezpiecznego obiektu `RecipeInsert`.
+ */
+export async function importRecipeWithAi(payload: ImportRecipePayload): Promise<RecipeInsert> {
+  const trimmedPayload = {
+    url: payload.url?.trim() || undefined,
+    rawText: payload.rawText?.trim() || undefined,
+    imageBase64: payload.imageBase64?.trim() || undefined,
+    mimeType: payload.mimeType?.trim() || undefined,
+  }
+
+  if (!trimmedPayload.url && !trimmedPayload.rawText && !trimmedPayload.imageBase64) {
+    throw new Error('Podaj link do przepisu, tekst albo wybierz zdjęcie potrawy.')
+  }
+
+  const envelope = await invokeEdgeFunction<Record<string, unknown>>(
+    'import-recipe',
+    trimmedPayload,
+    {
+      signal: payload.signal,
+      timeoutMs: IMPORT_TIMEOUT_MS,
+      authErrorMsg: 'Brak uprawnień do importu AI. Zaloguj się ponownie i spróbuj jeszcze raz.',
+      timeoutErrorMsg:
+        'Przetwarzanie trwało zbyt długo (ponad 45 s). Wklej opis rolki ręcznie poniżej lub użyj zakładki „Ze zdjęcia / Zrzutu”.',
+    },
+  )
+
+  const rawRecipe = extractRawRecipeRecord(envelope)
+  return normalizeAiRecipeInsert(rawRecipe, {
+    sourceUrl: trimmedPayload.url ?? null,
+    sourcePlatform: inferSourcePlatform(rawRecipe.source_platform, trimmedPayload),
+  })
+}
+
+/**
+ * Tworzy lub wyszukuje przepis przy użyciu Edge Function `ai-recipe-assistant` (`mode: 'discover'`).
+ */
+export async function discoverRecipeWithAi(payload: {
+  userPrompt: string
+  useWebSearch: boolean
+  signal?: AbortSignal
+}): Promise<RecipeInsert> {
+  const userPrompt = payload.userPrompt.trim()
+  if (!userPrompt) {
+    throw new Error('Opisz, na co masz ochotę lub podaj dostępne składniki.')
+  }
+
+  const envelope = await invokeEdgeFunction<Record<string, unknown>>(
+    'ai-recipe-assistant',
+    {
+      mode: 'discover',
+      userPrompt,
+      useWebSearch: payload.useWebSearch,
+    },
+    {
+      signal: payload.signal,
+      timeoutMs: IMPORT_TIMEOUT_MS,
+      authErrorMsg: 'Brak uprawnień do asystenta AI. Zaloguj się ponownie i spróbuj jeszcze raz.',
+    },
+  )
+
+  const rawRecipe = extractRawRecipeRecord(envelope)
+  const serverPlatform =
+    typeof rawRecipe.source_platform === 'string' &&
+    VALID_SOURCE_PLATFORMS.has(rawRecipe.source_platform as SourcePlatform)
+      ? (rawRecipe.source_platform as SourcePlatform)
+      : null
+
+  return normalizeAiRecipeInsert(rawRecipe, {
+    sourcePlatform: serverPlatform ?? (payload.useWebSearch ? 'web' : 'ai'),
+  })
+}
+
+export interface RecipeEditDiffItem {
+  label: string
+  detail: string
+  kind: 'added' | 'removed' | 'updated'
+}
+
+export interface EditRecipeWithAiResult {
+  updatedFields: RecipeUpdate
+  previewRecipe: RecipeRow
+  changes: RecipeEditDiffItem[]
+}
+
+function formatIngredientQuantityLabel(ingredient: RecipeIngredient): string {
+  const unit = ingredient.unit.trim()
+  if (ingredient.amount > 0) {
+    const rounded = Math.round(ingredient.amount * 100) / 100
+    const amountStr = Number.isInteger(rounded) ? String(rounded) : String(rounded)
+    return unit ? `${amountStr} ${unit}` : amountStr
+  }
+  return unit || 'według uznania'
+}
+
+function formatDiffTimerLabel(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return 'brak'
+  const rounded = Math.round(seconds)
+  if (rounded < 60) return `${rounded} s`
+  const mins = Math.floor(rounded / 60)
+  const secs = rounded % 60
+  return secs === 0 ? `${mins} min` : `${mins} min ${secs} s`
+}
+
+function isOrderedSubsequence(sub: string[], full: string[]): boolean {
+  if (sub.length === 0) return true
+  let subIdx = 0
+  for (const item of full) {
+    if (item === sub[subIdx]) {
+      subIdx += 1
+      if (subIdx === sub.length) return true
+    }
+  }
+  return false
+}
+
+function haveSameMultiset(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false
+  const sortedA = [...a].sort()
+  const sortedB = [...b].sort()
+  return sortedA.every((item, idx) => item === sortedB[idx])
+}
+
+/**
+ * Porównuje dwa stany przepisu i buduje czytelną listę zmian po polsku
+ * do wyświetlenia przed zapisaniem modyfikacji zaproponowanych przez AI.
+ */
+export function buildRecipeEditDiff(before: RecipeRow, after: RecipeRow): RecipeEditDiffItem[] {
+  const changes: RecipeEditDiffItem[] = []
+
+  const beforeTitle = before.title.trim()
+  const afterTitle = after.title.trim()
+  if (beforeTitle !== afterTitle) {
+    changes.push({
+      label: 'Tytuł',
+      detail: `„${beforeTitle}” → „${afterTitle}”`,
+      kind: 'updated',
+    })
+  }
+
+  const beforeDesc = (before.description ?? '').trim()
+  const afterDesc = (after.description ?? '').trim()
+  if (beforeDesc !== afterDesc) {
+    if (!beforeDesc && afterDesc) {
+      changes.push({ label: 'Opis', detail: 'Dodano opis przepisu', kind: 'added' })
+    } else if (beforeDesc && !afterDesc) {
+      changes.push({ label: 'Opis', detail: 'Usunięto opis przepisu', kind: 'removed' })
+    } else {
+      changes.push({ label: 'Opis', detail: 'Zaktualizowano opis przepisu', kind: 'updated' })
+    }
+  }
+
+  const beforeCat = (before.category ?? '').trim()
+  const afterCat = (after.category ?? '').trim()
+  if (beforeCat !== afterCat) {
+    changes.push({
+      label: 'Kategoria',
+      detail: `${beforeCat || 'Brak'} → ${afterCat || 'Brak'}`,
+      kind: 'updated',
+    })
+  }
+
+  if ((before.servings ?? null) !== (after.servings ?? null)) {
+    changes.push({
+      label: 'Porcje',
+      detail: `${before.servings ?? '—'} → ${after.servings ?? '—'}`,
+      kind: 'updated',
+    })
+  }
+
+  const beforePrep = before.prep_time_minutes ?? 0
+  const afterPrep = after.prep_time_minutes ?? 0
+  if (beforePrep !== afterPrep) {
+    changes.push({
+      label: 'Czas przygotowania',
+      detail: `${beforePrep} min → ${afterPrep} min`,
+      kind: 'updated',
+    })
+  }
+
+  const beforeCook = before.cook_time_minutes ?? 0
+  const afterCook = after.cook_time_minutes ?? 0
+  if (beforeCook !== afterCook) {
+    changes.push({
+      label: 'Czas gotowania',
+      detail: `${beforeCook} min → ${afterCook} min`,
+      kind: 'updated',
+    })
+  }
+
+  // Dopasowanie składników w dwóch przebiegach: najpierw (nazwa + sekcja), potem sama nazwa
+  const beforePool = before.ingredients.map((ing, index) => ({
+    index,
+    ing,
+    nameKey: ing.name.trim().toLowerCase(),
+    sectionKey: (ing.category ?? '').trim().toLowerCase(),
+    matched: false,
+  }))
+  const afterMatched = new Array<RecipeIngredient | null>(after.ingredients.length).fill(null)
+
+  after.ingredients.forEach((afterIng, afterIdx) => {
+    const nameKey = afterIng.name.trim().toLowerCase()
+    const sectionKey = (afterIng.category ?? '').trim().toLowerCase()
+    const exact = beforePool.find(
+      (entry) => !entry.matched && entry.nameKey === nameKey && entry.sectionKey === sectionKey,
+    )
+    if (exact) {
+      exact.matched = true
+      afterMatched[afterIdx] = exact.ing
+    }
+  })
+
+  after.ingredients.forEach((afterIng, afterIdx) => {
+    if (afterMatched[afterIdx]) return
+    const nameKey = afterIng.name.trim().toLowerCase()
+    const byName = beforePool.find((entry) => !entry.matched && entry.nameKey === nameKey)
+    if (byName) {
+      byName.matched = true
+      afterMatched[afterIdx] = byName.ing
+    }
+  })
+
+  after.ingredients.forEach((afterIng, afterIdx) => {
+    const prevIng = afterMatched[afterIdx]
+    if (!prevIng) {
+      changes.push({
+        label: 'Dodano składnik',
+        detail: `${afterIng.name} (${formatIngredientQuantityLabel(afterIng)})`,
+        kind: 'added',
+      })
+      return
+    }
+
+    const amountChanged =
+      prevIng.amount !== afterIng.amount || prevIng.unit.trim() !== afterIng.unit.trim()
+    const prevSection = (prevIng.category ?? '').trim()
+    const nextSection = (afterIng.category ?? '').trim()
+    const sectionChanged = prevSection !== nextSection
+
+    if (amountChanged || sectionChanged) {
+      const parts: string[] = []
+      if (amountChanged) {
+        parts.push(
+          `${formatIngredientQuantityLabel(prevIng)} → ${formatIngredientQuantityLabel(afterIng)}`,
+        )
+      }
+      if (sectionChanged) {
+        parts.push(`sekcja „${prevSection || 'Brak'}” → „${nextSection || 'Brak'}”`)
+      }
+      changes.push({
+        label: 'Zmieniono składnik',
+        detail: `${afterIng.name}: ${parts.join(', ')}`,
+        kind: 'updated',
+      })
+    }
+  })
+
+  for (const entry of beforePool) {
+    if (!entry.matched) {
+      changes.push({
+        label: 'Usunięto składnik',
+        detail: `${entry.ing.name} (${formatIngredientQuantityLabel(entry.ing)})`,
+        kind: 'removed',
+      })
+    }
+  }
+
+  // Porównanie kroków przygotowania (liczba, kolejność, treść i timery)
+  const beforeTexts = before.steps.map((s) => s.instruction.trim())
+  const afterTexts = after.steps.map((s) => s.instruction.trim())
+
+  if (before.steps.length !== after.steps.length) {
+    const delta = after.steps.length - before.steps.length
+    changes.push({
+      label: 'Liczba kroków',
+      detail: `${before.steps.length} → ${after.steps.length} (${delta > 0 ? `+${delta}` : delta})`,
+      kind: delta > 0 ? 'added' : 'removed',
+    })
+
+    const pureInsertion =
+      afterTexts.length > beforeTexts.length && isOrderedSubsequence(beforeTexts, afterTexts)
+    const pureRemoval =
+      afterTexts.length < beforeTexts.length && isOrderedSubsequence(afterTexts, beforeTexts)
+
+    if (!pureInsertion && !pureRemoval) {
+      changes.push({
+        label: 'Treść kroków',
+        detail: 'Zaktualizowano instrukcje w krokach przygotowania',
+        kind: 'updated',
+      })
+    }
+  } else {
+    const samePositionTexts = beforeTexts.every((text, idx) => text === afterTexts[idx])
+    if (!samePositionTexts) {
+      if (haveSameMultiset(beforeTexts, afterTexts)) {
+        changes.push({
+          label: 'Kolejność kroków',
+          detail: 'Zmieniono kolejność kroków przygotowania',
+          kind: 'updated',
+        })
+      } else {
+        const changedStepNumbers: number[] = []
+        for (let i = 0; i < after.steps.length; i += 1) {
+          const prevStep = before.steps[i]
+          const nextStep = after.steps[i]
+          if (
+            prevStep.instruction.trim() !== nextStep.instruction.trim() ||
+            (prevStep.tip ?? '').trim() !== (nextStep.tip ?? '').trim()
+          ) {
+            changedStepNumbers.push(i + 1)
+          }
+        }
+        if (changedStepNumbers.length > 0) {
+          changes.push({
+            label: 'Treść kroków',
+            detail:
+              changedStepNumbers.length <= 4
+                ? `Zaktualizowano ${changedStepNumbers.length === 1 ? 'krok' : 'kroki'}: ${changedStepNumbers.join(', ')}`
+                : `Zaktualizowano ${changedStepNumbers.length} kroków przygotowania`,
+            kind: 'updated',
+          })
+        }
+      }
+    } else {
+      const tipsChanged = before.steps.some(
+        (step, idx) => (step.tip ?? '').trim() !== (after.steps[idx]?.tip ?? '').trim(),
+      )
+      if (tipsChanged) {
+        changes.push({
+          label: 'Wskazówki w krokach',
+          detail: 'Zaktualizowano wskazówki przy krokach',
+          kind: 'updated',
+        })
+      }
+    }
+  }
+
+  if (before.steps.length === after.steps.length) {
+    const timerDiffs: Array<{ stepNumber: number; prev: number; next: number }> = []
+    for (let i = 0; i < after.steps.length; i += 1) {
+      const prevTimer = before.steps[i]?.timer_seconds ?? 0
+      const nextTimer = after.steps[i]?.timer_seconds ?? 0
+      if (prevTimer !== nextTimer) {
+        timerDiffs.push({ stepNumber: i + 1, prev: prevTimer, next: nextTimer })
+      }
+    }
+    if (timerDiffs.length > 0 && timerDiffs.length <= 3) {
+      for (const item of timerDiffs) {
+        changes.push({
+          label: `Timer w kroku ${item.stepNumber}`,
+          detail: `${formatDiffTimerLabel(item.prev)} → ${formatDiffTimerLabel(item.next)}`,
+          kind: item.prev === 0 ? 'added' : item.next === 0 ? 'removed' : 'updated',
+        })
+      }
+    } else if (timerDiffs.length > 3) {
+      changes.push({
+        label: 'Timery w krokach',
+        detail: `Zmieniono timery w ${timerDiffs.length} krokach`,
+        kind: 'updated',
+      })
+    }
+  } else {
+    const beforeTimers = before.steps.map((s) => s.timer_seconds || 0).filter((t) => t > 0)
+    const afterTimers = after.steps.map((s) => s.timer_seconds || 0).filter((t) => t > 0)
+    const timersDiffer =
+      beforeTimers.length !== afterTimers.length ||
+      beforeTimers.some((t, idx) => t !== afterTimers[idx])
+    if (timersDiffer) {
+      changes.push({
+        label: 'Timery w krokach',
+        detail: 'Zaktualizowano czasy timerów w krokach',
+        kind: 'updated',
+      })
+    }
+  }
+
+  return changes
+}
+
+/**
+ * Modyfikuje istniejący przepis za pomocą Edge Function `ai-recipe-assistant` (`mode: 'edit'`),
+ * zachowuje metadane źródłowe i wylicza podsumowanie zmian przed zapisem.
+ */
+export async function editRecipeWithAi(payload: {
+  currentRecipe: RecipeRow
+  userPrompt: string
+  signal?: AbortSignal
+}): Promise<EditRecipeWithAiResult> {
+  const userPrompt = payload.userPrompt.trim()
+  if (!userPrompt) {
+    throw new Error('Opisz, co chcesz zmienić w przepisie.')
+  }
+
+  const envelope = await invokeEdgeFunction<Record<string, unknown>>(
+    'ai-recipe-assistant',
+    {
+      mode: 'edit',
+      userPrompt,
+      currentRecipe: payload.currentRecipe,
+    },
+    {
+      signal: payload.signal,
+      timeoutMs: IMPORT_TIMEOUT_MS,
+      authErrorMsg: 'Brak uprawnień do asystenta AI. Zaloguj się ponownie i spróbuj jeszcze raz.',
+    },
+  )
+
+  const rawRecipe = extractRawRecipeRecord(envelope)
+  const { currentRecipe } = payload
+
+  const updatedFields: RecipeUpdate = {
+    title: toNullableTrimmedString(rawRecipe.title) ?? currentRecipe.title,
+    description:
+      'description' in rawRecipe
+        ? toNullableTrimmedString(rawRecipe.description)
+        : currentRecipe.description,
+    prep_time_minutes:
+      'prep_time_minutes' in rawRecipe
+        ? toNonNegativeInt(rawRecipe.prep_time_minutes, currentRecipe.prep_time_minutes ?? 0, 0)
+        : currentRecipe.prep_time_minutes,
+    cook_time_minutes:
+      'cook_time_minutes' in rawRecipe
+        ? toNonNegativeInt(rawRecipe.cook_time_minutes, currentRecipe.cook_time_minutes ?? 0, 0)
+        : currentRecipe.cook_time_minutes,
+    servings:
+      'servings' in rawRecipe
+        ? toNonNegativeInt(rawRecipe.servings, currentRecipe.servings ?? 2, 1)
+        : currentRecipe.servings,
+    category: (toNullableTrimmedString(rawRecipe.category) ??
+      currentRecipe.category ??
+      'Obiad') as RecipeCategory,
+    tags: Array.isArray(rawRecipe.tags)
+      ? normalizeTags(rawRecipe.tags)
+      : (currentRecipe.tags ?? []),
+    ingredients: Array.isArray(rawRecipe.ingredients)
+      ? normalizeIngredients(rawRecipe.ingredients)
+      : currentRecipe.ingredients,
+    steps: Array.isArray(rawRecipe.steps)
+      ? normalizeSteps(rawRecipe.steps)
+      : currentRecipe.steps,
+    nutrition:
+      'nutrition' in rawRecipe
+        ? normalizeNutrition(rawRecipe.nutrition)
+        : currentRecipe.nutrition,
+  }
+
+  const previewRecipe: RecipeRow = {
+    ...currentRecipe,
+    title: updatedFields.title ?? currentRecipe.title,
+    description: updatedFields.description ?? null,
+    prep_time_minutes: updatedFields.prep_time_minutes ?? null,
+    cook_time_minutes: updatedFields.cook_time_minutes ?? null,
+    servings: updatedFields.servings ?? null,
+    category: updatedFields.category ?? currentRecipe.category,
+    tags: updatedFields.tags ?? currentRecipe.tags,
+    ingredients: updatedFields.ingredients ?? currentRecipe.ingredients,
+    steps: updatedFields.steps ?? currentRecipe.steps,
+    nutrition: updatedFields.nutrition ?? null,
+    // Zachowaj oryginalne metadane przepisu
+    id: currentRecipe.id,
+    image_url: currentRecipe.image_url,
+    source_url: currentRecipe.source_url,
+    source_platform: currentRecipe.source_platform,
+    is_favorite: currentRecipe.is_favorite,
+    created_at: currentRecipe.created_at,
+    created_by: currentRecipe.created_by,
+  }
+
+  const changes = buildRecipeEditDiff(currentRecipe, previewRecipe)
+
+  return {
+    updatedFields,
+    previewRecipe,
+    changes,
   }
 }
 

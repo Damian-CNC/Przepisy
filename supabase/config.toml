@@ -1,2 +1,5 @@
 [functions.import-recipe]
 verify_jwt = false
+
+[functions.ai-recipe-assistant]
+verify_jwt = false

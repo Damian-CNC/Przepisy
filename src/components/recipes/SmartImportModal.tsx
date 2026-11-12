@@ -8,13 +8,16 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import {
   AlertCircle,
   Camera,
   Check,
   Clock,
+  ExternalLink,
   ImagePlus,
   Link2,
+  Mic,
   PenLine,
   Plus,
   RotateCcw,
@@ -22,9 +25,16 @@ import {
   Timer,
   Trash2,
   Upload,
+  Wand2,
 } from 'lucide-react'
+import { useVoiceRecognition } from '../../hooks/useVoiceRecognition'
 import { prepareImageForAi, uploadRecipeImage } from '../../lib/imageCompression'
-import { groupIngredientsBySection, importRecipeWithAi } from '../../lib/recipesApi'
+import {
+  discoverRecipeWithAi,
+  groupIngredientsBySection,
+  importRecipeWithAi,
+  toSafeHttpUrl,
+} from '../../lib/recipesApi'
 import type {
   RecipeCategory,
   RecipeIngredient,
@@ -46,12 +56,20 @@ export interface SmartImportModalProps {
   onAutoAnalyzeConsumed?: () => void
 }
 
-type ImportTabId = 'url' | 'photo' | 'manual'
+type ImportTabId = 'discover' | 'url' | 'photo' | 'manual'
 
 const TABS: ReadonlyArray<{ id: ImportTabId; label: string; Icon: typeof Link2 }> = [
+  { id: 'discover', label: 'Szef Kuchni AI', Icon: Wand2 },
   { id: 'url', label: 'Z linku / Instagrama', Icon: Link2 },
   { id: 'photo', label: 'Ze zdjęcia / Zrzutu', Icon: Camera },
   { id: 'manual', label: 'Wpisz ręcznie', Icon: PenLine },
+]
+
+const CHEF_INSPIRATIONS: readonly string[] = [
+  'Klasyczna carbonara',
+  'Szybki makaron do 20 min',
+  'Coś słodkiego z jabłkami',
+  'Kremowa zupa z pieczonych pomidorów',
 ]
 
 interface ManualIngredientRow {
@@ -142,21 +160,46 @@ export function SmartImportModal({
   const analyzeAbortRef = useRef<AbortController | null>(null)
   const onAutoAnalyzeConsumedRef = useRef(onAutoAnalyzeConsumed)
 
-  const [activeTab, setActiveTab] = useState<ImportTabId>('url')
+  const chefTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const prefersReducedMotion = useReducedMotion()
+
+  const [activeTab, setActiveTab] = useState<ImportTabId>('discover')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-  // Zakładka 1: URL / Instagram
+  // Zakładka 1: Szef Kuchni AI
+  const [chefPrompt, setChefPrompt] = useState('')
+  const [useWebSearch, setUseWebSearch] = useState(true)
+
+  const {
+    isSupported: isVoiceSupported,
+    isListening,
+    interimTranscript,
+    error: voiceError,
+    startListening,
+    stopListening,
+    resetTranscript,
+  } = useVoiceRecognition({
+    lang: 'pl-PL',
+    onFinalResult: (spokenText) => {
+      setChefPrompt((prev) => {
+        const trimmed = prev.trim()
+        return trimmed ? `${trimmed} ${spokenText}` : spokenText
+      })
+    },
+  })
+
+  // Zakładka 2: URL / Instagram
   const [urlInput, setUrlInput] = useState(initialUrl)
   const [rawTextInput, setRawTextInput] = useState(initialRawText)
 
-  // Zakładka 2: Zdjęcie / Zrzut ekranu
+  // Zakładka 3: Zdjęcie / Zrzut ekranu
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const photoPreviewUrl = useMemo(
     () => (photoFile ? URL.createObjectURL(photoFile) : null),
     [photoFile],
   )
 
-  // Zakładka 3: Formularz ręczny
+  // Zakładka 4: Formularz ręczny
   const [manualTitle, setManualTitle] = useState('')
   const [manualDescription, setManualDescription] = useState('')
   const [manualCategory, setManualCategory] = useState<RecipeCategory>('Obiad')
@@ -193,7 +236,11 @@ export function SmartImportModal({
   }, [manualCoverPreviewUrl])
 
   const resetAllState = () => {
+    stopListening()
+    resetTranscript()
     setErrorMessage(null)
+    setChefPrompt('')
+    setUseWebSearch(true)
     setUrlInput('')
     setRawTextInput('')
     setPhotoFile(null)
@@ -218,6 +265,17 @@ export function SmartImportModal({
     onClose()
   }
 
+  const selectTab = useCallback(
+    (nextTabId: ImportTabId) => {
+      if (nextTabId !== 'discover' && isListening) {
+        stopListening()
+      }
+      setActiveTab(nextTabId)
+      setErrorMessage(null)
+    },
+    [isListening, stopListening],
+  )
+
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
     let nextIndex: number | null = null
     if (event.key === 'ArrowRight') {
@@ -233,11 +291,20 @@ export function SmartImportModal({
     if (nextIndex !== null) {
       event.preventDefault()
       const nextTab = TABS[nextIndex]
-      setActiveTab(nextTab.id)
-      setErrorMessage(null)
+      selectTab(nextTab.id)
       tabRefs.current[nextTab.id]?.focus()
     }
   }
+
+  // Przewinięcie aktywnej zakładki w widok przy każdej zmianie w poziomym pasku zakładek
+  useEffect(() => {
+    if (!isOpen || previewDraft) return
+    tabRefs.current[activeTab]?.scrollIntoView({
+      block: 'nearest',
+      inline: 'nearest',
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+    })
+  }, [activeTab, isOpen, previewDraft, prefersReducedMotion])
 
   useEffect(() => {
     onAutoAnalyzeConsumedRef.current = onAutoAnalyzeConsumed
@@ -256,7 +323,9 @@ export function SmartImportModal({
     analyzeAbortRef.current = null
     setIsAnalyzing(false)
     setErrorMessage(
-      'Przerwano analizę. Możesz wkleić opis rolki ręcznie poniżej lub użyć zakładki „Ze zdjęcia / Zrzutu”.',
+      activeTab === 'discover'
+        ? 'Przerwano wyszukiwanie AI. Możesz doprecyzować opis i spróbować ponownie.'
+        : 'Przerwano analizę. Możesz wkleić opis rolki ręcznie poniżej lub użyć zakładki „Ze zdjęcia / Zrzutu”.',
     )
   }
 
@@ -285,7 +354,7 @@ export function SmartImportModal({
       if (!isMountedRef.current) return
       setPreviewDraft(draft)
     } catch (err) {
-      if (!isMountedRef.current) return
+      if (!isMountedRef.current || controller.signal.aborted) return
       setErrorMessage(
         err instanceof Error && err.message
           ? err.message
@@ -315,14 +384,14 @@ export function SmartImportModal({
     const justOpened = !wasOpenRef.current
     wasOpenRef.current = true
 
-    if (hasIncomingContent && (justOpened || autoAnalyze)) {
+    if ((hasIncomingContent || autoAnalyze) && (justOpened || autoAnalyze)) {
       setUrlInput(initialUrl)
       setRawTextInput(initialRawText)
       setActiveTab('url')
       setErrorMessage(null)
       setPreviewDraft(null)
     } else if (justOpened) {
-      setActiveTab('url')
+      setActiveTab('discover')
     }
 
     if (autoAnalyze && hasIncomingContent) {
@@ -335,6 +404,52 @@ export function SmartImportModal({
       void runUrlAnalysis(trimmedUrl, trimmedRawText)
     }
   }, [isOpen, initialUrl, initialRawText, autoAnalyze, runUrlAnalysis])
+
+  const handleDiscoverRecipe = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (isAnalyzing) return
+
+    if (isListening) {
+      stopListening()
+    }
+
+    const prompt = chefPrompt.trim()
+    if (!prompt) {
+      setErrorMessage('Opisz, na co masz ochotę lub wpisz składniki z lodówki.')
+      return
+    }
+
+    analyzeAbortRef.current?.abort()
+    const controller = new AbortController()
+    analyzeAbortRef.current = controller
+
+    setErrorMessage(null)
+    setIsAnalyzing(true)
+
+    try {
+      const draft = await discoverRecipeWithAi({
+        userPrompt: prompt,
+        useWebSearch,
+        signal: controller.signal,
+      })
+      if (!isMountedRef.current) return
+      setPreviewDraft(draft)
+    } catch (err) {
+      if (!isMountedRef.current || controller.signal.aborted) return
+      setErrorMessage(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Nie udało się wyszukać ani utworzyć przepisu przez AI.',
+      )
+    } finally {
+      if (analyzeAbortRef.current === controller) {
+        analyzeAbortRef.current = null
+      }
+      if (isMountedRef.current) {
+        setIsAnalyzing(false)
+      }
+    }
+  }
 
   const handleAnalyzeUrl = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -532,6 +647,14 @@ export function SmartImportModal({
     }
   }
 
+  const safePreviewSourceUrl = toSafeHttpUrl(previewDraft?.source_url)
+  const liveChefPromptValue =
+    isListening && interimTranscript
+      ? chefPrompt.trim()
+        ? `${chefPrompt.trim()} ${interimTranscript}`
+        : interimTranscript
+      : chefPrompt
+
   return (
     <GlassModal
       isOpen={isOpen}
@@ -539,8 +662,8 @@ export function SmartImportModal({
       title={previewDraft ? 'Podgląd przetworzonego przepisu' : 'Dodaj nowy przepis'}
       subtitle={
         previewDraft
-          ? 'Sprawdź przetłumaczone składniki i kroki przed zapisaniem w książce.'
-          : 'Wklej link, zrób zdjęcie książki kucharskiej albo wpisz przepis ręcznie.'
+          ? 'Sprawdź przetłumaczone składniki i kroki przed zapisaniem w bazie.'
+          : 'Opisz pomysł Szefowi Kuchni AI, wklej link, zrób zdjęcie lub wpisz przepis ręcznie.'
       }
       size="lg"
       closedBy={isAnalyzing || isSaving ? 'none' : 'any'}
@@ -569,7 +692,11 @@ export function SmartImportModal({
 
               <div className="space-y-1.5">
                 <p className="text-lg font-semibold text-stone-900 dark:text-stone-50">
-                  AI mieli przepis, tłumaczy na polski i przelicza składniki...
+                  {activeTab === 'discover'
+                    ? useWebSearch
+                      ? 'Szef Kuchni AI przeszukuje sieć i układa kroki przepisu...'
+                      : 'Szef Kuchni AI tworzy autorski przepis z Twoich składników...'
+                    : 'AI mieli przepis, tłumaczy na polski i przelicza składniki...'}
                 </p>
                 <p className="text-sm text-stone-600 dark:text-stone-300">
                   Dzielimy też instrukcje na wygodne kroki z minutnikami. To potrwa tylko chwilę.
@@ -633,6 +760,25 @@ export function SmartImportModal({
                 </GlassButton>
               </div>
             </div>
+
+            {safePreviewSourceUrl && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/45 bg-white/55 px-4 py-2.5 text-sm dark:border-white/15 dark:bg-zinc-900/55">
+                <span className="text-xs font-medium text-stone-600 dark:text-stone-300">
+                  Źródło przepisu:
+                </span>
+                <a
+                  href={safePreviewSourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-full font-medium text-amber-800 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 dark:text-amber-300 dark:focus-visible:outline-amber-400"
+                >
+                  <span className="max-w-[16rem] truncate sm:max-w-sm">
+                    {safePreviewSourceUrl}
+                  </span>
+                  <ExternalLink className="size-3.5 shrink-0" aria-hidden="true" />
+                </a>
+              </div>
+            )}
 
             {/* Edycja podstawowych danych */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -868,18 +1014,18 @@ export function SmartImportModal({
                 loadingText="Zapisywanie..."
                 leftIcon={<Check className="size-5" aria-hidden="true" />}
               >
-                Zapisz w naszej książce
+                Zapisz w naszej bazie
               </GlassButton>
             </div>
           </form>
         ) : (
-          /* 3 zakładki w szklanej kapsule */
+          /* 4 zakładki w szklanej kapsule (jednowierszowy przewijany pasek) */
           <>
             <div
               role="tablist"
               aria-label="Sposób dodania przepisu"
               className={cn(
-                'flex items-center gap-1.5 overflow-x-auto rounded-full p-1.5',
+                'flex flex-nowrap items-center gap-1.5 overflow-x-auto rounded-full p-1.5',
                 'backdrop-blur-2xl backdrop-saturate-150',
                 'bg-stone-900/5 dark:bg-white/5',
                 'border border-white/45 dark:border-white/15',
@@ -903,13 +1049,10 @@ export function SmartImportModal({
                     aria-selected={isSelected}
                     aria-controls={panelDomId}
                     tabIndex={isSelected ? 0 : -1}
-                    onClick={() => {
-                      setActiveTab(tab.id)
-                      setErrorMessage(null)
-                    }}
+                    onClick={() => selectTab(tab.id)}
                     onKeyDown={(e) => handleTabKeyDown(e, index)}
                     className={cn(
-                      'relative inline-flex min-h-11 flex-1 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors',
+                      'relative inline-flex min-h-11 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors sm:flex-1',
                       'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 dark:focus-visible:outline-amber-400',
                       isSelected
                         ? cn(
@@ -925,6 +1068,224 @@ export function SmartImportModal({
                   </button>
                 )
               })}
+            </div>
+
+            {/* Panel 1: Szef Kuchni AI */}
+            <div
+              id={`${baseId}-panel-discover`}
+              role="tabpanel"
+              aria-labelledby={`${baseId}-tab-discover`}
+              hidden={activeTab !== 'discover'}
+            >
+              {activeTab === 'discover' && (
+                <form onSubmit={handleDiscoverRecipe} className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <label
+                        htmlFor={`${baseId}-chef-prompt`}
+                        className="text-sm font-medium text-stone-800 dark:text-stone-200"
+                      >
+                        Czego szukasz albo co masz w lodówce?
+                      </label>
+
+                      {isListening && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/35 bg-emerald-500/15 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 dark:border-emerald-400/35 dark:text-emerald-300">
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              'size-2 rounded-full bg-emerald-500',
+                              !prefersReducedMotion && 'animate-pulse',
+                            )}
+                          />
+                          Słucham...
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="relative">
+                      <textarea
+                        ref={chefTextareaRef}
+                        id={`${baseId}-chef-prompt`}
+                        name="chefPrompt"
+                        rows={4}
+                        value={liveChefPromptValue}
+                        onChange={(e) => {
+                          if (isListening) {
+                            stopListening()
+                          }
+                          setChefPrompt(e.target.value)
+                        }}
+                        placeholder="np. Mam cukinię, śmietankę i makaron — wymyśl szybki obiad, albo znajdź przepis na klasyczne tiramisu..."
+                        className={cn(
+                          FIELD_CLASS,
+                          'min-h-32 py-3',
+                          isVoiceSupported ? 'pr-16' : undefined,
+                        )}
+                      />
+
+                      {isVoiceSupported && (
+                        <div className="absolute right-2.5 bottom-2.5 flex items-center justify-center">
+                          {isListening && !prefersReducedMotion && (
+                            <>
+                              <motion.span
+                                aria-hidden="true"
+                                className="pointer-events-none absolute inset-0 rounded-full bg-amber-500/35 dark:bg-amber-400/30"
+                                initial={{ scale: 1, opacity: 0.65 }}
+                                animate={{ scale: 1.5, opacity: 0 }}
+                                transition={{ duration: 1.4, repeat: Infinity, ease: 'easeOut' }}
+                              />
+                              <motion.span
+                                aria-hidden="true"
+                                className="pointer-events-none absolute inset-0 rounded-full bg-emerald-500/30 dark:bg-emerald-400/25"
+                                initial={{ scale: 1, opacity: 0.5 }}
+                                animate={{ scale: 1.75, opacity: 0 }}
+                                transition={{
+                                  duration: 1.4,
+                                  delay: 0.4,
+                                  repeat: Infinity,
+                                  ease: 'easeOut',
+                                }}
+                              />
+                            </>
+                          )}
+                          <motion.button
+                            type="button"
+                            onClick={isListening ? stopListening : startListening}
+                            aria-pressed={isListening}
+                            aria-label={
+                              isListening
+                                ? 'Zatrzymaj dyktowanie głosowe'
+                                : 'Podyktuj pomysł głosowo po polsku'
+                            }
+                            whileTap={prefersReducedMotion ? undefined : { scale: 0.92 }}
+                            transition={{ type: 'spring', stiffness: 500, damping: 28 }}
+                            className={cn(
+                              'relative z-10 inline-flex size-11 cursor-pointer items-center justify-center rounded-full border transition-colors',
+                              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 dark:focus-visible:outline-amber-400',
+                              isListening
+                                ? 'border-emerald-300/70 bg-gradient-to-br from-amber-500 to-emerald-600 text-white shadow-[0_0_20px_rgba(245,158,11,0.45)]'
+                                : 'border-white/50 bg-white/80 text-amber-800 hover:bg-white dark:border-white/15 dark:bg-zinc-800/85 dark:text-amber-300 dark:hover:bg-zinc-800',
+                            )}
+                          >
+                            <Mic className="size-5" aria-hidden="true" />
+                          </motion.button>
+                        </div>
+                      )}
+                    </div>
+
+                    {isListening && interimTranscript && (
+                      <p
+                        aria-live="polite"
+                        className="text-xs font-medium text-emerald-800 dark:text-emerald-300"
+                      >
+                        Na żywo: „{interimTranscript}”
+                      </p>
+                    )}
+
+                    {voiceError && (
+                      <div
+                        role="alert"
+                        className="flex items-start gap-2 rounded-2xl border border-amber-600/30 bg-amber-500/12 p-3 text-xs font-medium text-amber-950 dark:border-amber-400/30 dark:bg-amber-500/15 dark:text-amber-100"
+                      >
+                        <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                        <span>{voiceError}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Szybkie pigułki inspiracji */}
+                  <div className="flex flex-col gap-2">
+                    <span className="text-xs font-medium text-stone-600 dark:text-stone-300">
+                      Szybkie inspiracje:
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {CHEF_INSPIRATIONS.map((idea) => {
+                        const isActiveIdea = chefPrompt.trim() === idea
+                        return (
+                          <GlassPill
+                            key={idea}
+                            as="button"
+                            variant={isActiveIdea ? 'active' : 'surface'}
+                            size="sm"
+                            onClick={() => {
+                              if (isListening) stopListening()
+                              setChefPrompt(idea)
+                              setErrorMessage(null)
+                              chefTextareaRef.current?.focus()
+                            }}
+                            className="min-h-11 px-4 text-xs sm:text-sm"
+                          >
+                            {idea}
+                          </GlassPill>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Liquid Toggle Switch (iOS style) */}
+                  <label
+                    htmlFor={`${baseId}-web-search-switch`}
+                    className={cn(
+                      'flex min-h-14 cursor-pointer items-center justify-between gap-4 rounded-2xl p-3.5',
+                      'backdrop-blur-2xl backdrop-saturate-150',
+                      'bg-white/60 dark:bg-zinc-900/55',
+                      'border border-white/50 dark:border-white/15',
+                      'shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.55)]',
+                    )}
+                  >
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <span className="block text-sm font-semibold text-stone-900 dark:text-stone-50">
+                        Przeszukaj internet (Google Search)
+                      </span>
+                      <span className="block text-xs leading-relaxed text-stone-600 dark:text-stone-300">
+                        Włączone dla konkretnych dań z sieci; wyłącz dla autorskich dań ze składników w lodówce.
+                      </span>
+                    </div>
+
+                    <span className="relative inline-flex shrink-0 items-center">
+                      <input
+                        id={`${baseId}-web-search-switch`}
+                        type="checkbox"
+                        role="switch"
+                        checked={useWebSearch}
+                        onChange={(e) => setUseWebSearch(e.target.checked)}
+                        className="peer sr-only"
+                      />
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'relative inline-flex h-8 w-14 items-center rounded-full p-1 transition-colors duration-200',
+                          'backdrop-blur-xl backdrop-saturate-150',
+                          'border border-stone-900/15 bg-stone-900/15 dark:border-white/20 dark:bg-white/15',
+                          'shadow-[inset_0_1px_2px_rgba(0,0,0,0.12)]',
+                          'peer-checked:border-emerald-400/60 peer-checked:bg-emerald-600/90 dark:peer-checked:bg-emerald-500/85',
+                          'peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-amber-600 dark:peer-focus-visible:outline-amber-400',
+                          'peer-checked:[&>span]:translate-x-6',
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            'size-6 rounded-full bg-white transition-transform duration-200 motion-reduce:transition-none',
+                            'shadow-[0_2px_8px_rgba(0,0,0,0.22),inset_0_1px_1px_rgba(255,255,255,0.95)]',
+                          )}
+                        />
+                      </span>
+                    </span>
+                  </label>
+
+                  <div className="pt-1">
+                    <GlassButton
+                      type="submit"
+                      variant="primary"
+                      size="lg"
+                      fullWidth
+                      leftIcon={<Wand2 className="size-5" aria-hidden="true" />}
+                    >
+                      Znajdź lub stwórz przepis z AI
+                    </GlassButton>
+                  </div>
+                </form>
+              )}
             </div>
 
             {/* Panel 1: Z linku / Instagrama */}
