@@ -119,6 +119,10 @@ export function isSupabaseConfigured(): boolean {
   return /^https?:\/\//i.test(supabaseUrl) && supabaseAnonKey.length > 0
 }
 
+export function getSupabasePublicConfig(): { url: string; anonKey: string } {
+  return { url: supabaseUrl, anonKey: supabaseAnonKey }
+}
+
 const FALLBACK_SUPABASE_URL = 'https://placeholder.supabase.co'
 const FALLBACK_SUPABASE_KEY = 'sb_publishable_placeholder'
 

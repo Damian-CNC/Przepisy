@@ -1,6 +1,3 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
-import { GoogleGenAI, Type } from "npm:@google/genai@^1.0.0";
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -20,7 +17,7 @@ interface ApifyInstagramItem {
   images?: string[];
 }
 
-type GeminiContentPart =
+type GeminiPart =
   | { text: string }
   | { inlineData: { data: string; mimeType: string } };
 
@@ -151,7 +148,7 @@ function extractRecipeJsonLdFromHtml(html: string): { text: string; imageUrl: st
       const recipe = findJsonLdRecipe(parsed);
       if (recipe) {
         return {
-          text: JSON.stringify(recipe).slice(0, 15000),
+          text: JSON.stringify(recipe).slice(0, 12000),
           imageUrl: extractJsonLdImage(recipe.image),
         };
       }
@@ -160,6 +157,158 @@ function extractRecipeJsonLdFromHtml(html: string): { text: string; imageUrl: st
     }
   }
   return { text: "", imageUrl: null };
+}
+
+const RECIPE_RESPONSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    title: { type: "STRING", description: "Nazwa potrawy po polsku" },
+    description: {
+      type: "STRING",
+      description: "Krótki, apetyczny opis potrawy (1-2 zdania)",
+    },
+    prep_time_minutes: {
+      type: "INTEGER",
+      description: "Czas przygotowania w minutach",
+    },
+    cook_time_minutes: {
+      type: "INTEGER",
+      description: "Czas gotowania/pieczenia w minutach",
+    },
+    servings: { type: "INTEGER", description: "Liczba porcji" },
+    category: {
+      type: "STRING",
+      description:
+        "Jedna z kategorii: Śniadanie, Obiad, Kolacja, Deser, Przekąska, Napój, Wypieki",
+    },
+    tags: {
+      type: "ARRAY",
+      items: { type: "STRING" },
+      description: "Tagi np. Szybkie, Włoskie, Wegetariańskie, Kurczak",
+    },
+    ingredients: {
+      type: "ARRAY",
+      description: "Pełna lista wszystkich składników",
+      items: {
+        type: "OBJECT",
+        properties: {
+          name: { type: "STRING" },
+          amount: { type: "NUMBER" },
+          unit: { type: "STRING" },
+        },
+        required: ["name", "amount", "unit"],
+      },
+    },
+    steps: {
+      type: "ARRAY",
+      description: "Kroki przygotowania w stylu Thermomix",
+      items: {
+        type: "OBJECT",
+        properties: {
+          step_number: { type: "INTEGER" },
+          instruction: {
+            type: "STRING",
+            description: "Jasna instrukcja co zrobić w tym kroku",
+          },
+          step_ingredients: {
+            type: "ARRAY",
+            description: "Składniki dodawane konkretnie w tym kroku wraz z ilością",
+            items: {
+              type: "OBJECT",
+              properties: {
+                name: { type: "STRING" },
+                amount: { type: "NUMBER" },
+                unit: { type: "STRING" },
+              },
+              required: ["name", "amount", "unit"],
+            },
+          },
+          timer_seconds: {
+            type: "INTEGER",
+            description:
+              "Czas minutnika w sekundach (0 jeśli krok nie wymaga odliczania czasu)",
+          },
+          tip: {
+            type: "STRING",
+            description: "Opcjonalna wskazówka kulinarna do kroku",
+          },
+        },
+        required: ["step_number", "instruction", "step_ingredients", "timer_seconds"],
+      },
+    },
+  },
+  required: [
+    "title",
+    "prep_time_minutes",
+    "cook_time_minutes",
+    "servings",
+    "category",
+    "ingredients",
+    "steps",
+  ],
+};
+
+async function uploadImageToSupabaseStorage(
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  externalImageUrl: string,
+): Promise<string | null> {
+  if (!isSafePublicHttpUrl(externalImageUrl)) return null;
+
+  try {
+    const imgRes = await fetch(externalImageUrl, {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!imgRes.ok) return null;
+
+    const rawContentType = imgRes.headers.get("content-type") || "";
+    const contentType = rawContentType.split(";")[0].trim().toLowerCase();
+    if (!contentType.startsWith("image/")) {
+      return null;
+    }
+
+    const contentLength = Number(imgRes.headers.get("content-length") || "0");
+    if (contentLength > 6 * 1024 * 1024) {
+      return null;
+    }
+
+    const arrayBuffer = await imgRes.arrayBuffer();
+    if (arrayBuffer.byteLength > 6 * 1024 * 1024) {
+      return null;
+    }
+
+    let fileExt = "jpg";
+    if (contentType.includes("png")) {
+      fileExt = "png";
+    } else if (contentType.includes("webp")) {
+      fileExt = "webp";
+    }
+
+    const fileName = `imported/${crypto.randomUUID()}.${fileExt}`;
+    const baseUrl = supabaseUrl.replace(/\/+$/, "");
+
+    const uploadRes = await fetch(`${baseUrl}/storage/v1/object/recipe-images/${fileName}`, {
+      method: "POST",
+      headers: {
+        apikey: supabaseServiceKey,
+        Authorization: `Bearer ${supabaseServiceKey}`,
+        "Content-Type": contentType,
+        "x-upsert": "false",
+      },
+      body: arrayBuffer,
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!uploadRes.ok) {
+      console.warn("Błąd zapisu okładki w Storage:", uploadRes.status);
+      return null;
+    }
+
+    return `${baseUrl}/storage/v1/object/public/recipe-images/${fileName}`;
+  } catch (err) {
+    console.warn("Nie udało się skopiować zdjęcia do Supabase Storage:", err);
+    return null;
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -190,7 +339,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-    const geminiModel = Deno.env.get("GEMINI_MODEL") || "gemini-3.8-flash";
+    const geminiModel = Deno.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite";
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const apifyToken = Deno.env.get("APIFY_API_TOKEN");
@@ -202,14 +351,11 @@ Deno.serve(async (req: Request) => {
       throw new Error("Brak zmiennych SUPABASE_URL lub SUPABASE_SERVICE_ROLE_KEY.");
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const ai = new GoogleGenAI({ apiKey: geminiApiKey });
-
     let extractedText = rawText;
     let externalImageUrl: string | null = null;
     let sourcePlatform = "manual";
 
-    // 1. Obsługa ekstrakcji z URL (Instagram oraz strony WWW)
+    // 1. Ekstrakcja z URL (lekka, równoległa, bez dużych bibliotek)
     if (url) {
       if (!isSafePublicHttpUrl(url)) {
         return jsonResponse(
@@ -223,6 +369,8 @@ Deno.serve(async (req: Request) => {
         lowerUrl.includes("instagram.com") || lowerUrl.includes("instagr.am");
       sourcePlatform = isInstagram ? "instagram" : "web";
 
+      let apifyGotCaption = false;
+
       if (isInstagram && apifyToken) {
         try {
           const apifyRes = await fetch(
@@ -231,20 +379,19 @@ Deno.serve(async (req: Request) => {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ username: [url], resultsLimit: 1 }),
-              signal: AbortSignal.timeout(25000),
+              signal: AbortSignal.timeout(18000),
             },
           );
 
-          if (!apifyRes.ok) {
-            console.warn(
-              `Apify zwróciło status ${apifyRes.status}; przechodzę do fallbacku OpenGraph/Jina.`,
-            );
-          } else {
+          if (apifyRes.ok) {
             const items: unknown = await apifyRes.json();
             if (Array.isArray(items) && items.length > 0) {
               const firstItem = items[0] as ApifyInstagramItem;
               if (typeof firstItem.caption === "string" && firstItem.caption.trim()) {
                 extractedText += (extractedText ? "\n" : "") + firstItem.caption.trim();
+                if (firstItem.caption.trim().length > 40) {
+                  apifyGotCaption = true;
+                }
               }
               const candidateImage =
                 firstItem.displayUrl ||
@@ -256,132 +403,84 @@ Deno.serve(async (req: Request) => {
             }
           }
         } catch (apifyErr) {
-          console.warn(
-            "Błąd wywołania Apify dla Instagrama; przechodzę do fallbacku:",
-            apifyErr,
-          );
+          console.warn("Błąd wywołania Apify dla Instagrama:", apifyErr);
         }
       }
 
-      // Pobranie metadanych OpenGraph oraz JSON-LD Recipe bezpośrednio z HTML
-      try {
-        const pageRes = await fetch(url, {
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
-          },
-          signal: AbortSignal.timeout(12000),
-        });
-        if (pageRes.ok) {
-          const html = await pageRes.text();
+      // Dla zwykłych stron pobieramy HTML + Jina równolegle; dla IG pomijamy ciężki HTML jeśli brak potrzeby
+      const [htmlOutcome, jinaOutcome] = await Promise.allSettled([
+        isInstagram
+          ? Promise.resolve("")
+          : fetch(url, {
+              headers: {
+                "User-Agent":
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+                Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
+              },
+              signal: AbortSignal.timeout(8000),
+            }).then(async (res) => (res.ok ? (await res.text()).slice(0, 350000) : "")),
+        apifyGotCaption
+          ? Promise.resolve("")
+          : fetch(`https://r.jina.ai/${url}`, {
+              headers: { Accept: "text/plain" },
+              signal: AbortSignal.timeout(9000),
+            }).then(async (res) => (res.ok ? (await res.text()).slice(0, 15000) : "")),
+      ]);
 
-          const jsonLd = extractRecipeJsonLdFromHtml(html);
-          if (jsonLd.imageUrl && !externalImageUrl) {
-            externalImageUrl = jsonLd.imageUrl;
-          }
-          if (jsonLd.text) {
-            extractedText += (extractedText ? "\n" : "") + `JSON_LD_RECIPE:\n${jsonLd.text}`;
-          }
-
-          const ogImage =
-            extractMetaContent(html, "og:image") ||
-            extractMetaContent(html, "twitter:image");
-          if (ogImage && !externalImageUrl) {
-            externalImageUrl = ogImage;
-          }
-
-          const ogTitle = extractMetaContent(html, "og:title");
-          const ogDescription =
-            extractMetaContent(html, "og:description") ||
-            extractMetaContent(html, "description");
-          if (ogTitle || ogDescription) {
-            extractedText +=
-              (extractedText ? "\n" : "") +
-              [ogTitle, ogDescription].filter(Boolean).join("\n");
-          }
+      if (htmlOutcome.status === "fulfilled" && htmlOutcome.value) {
+        const html = htmlOutcome.value;
+        const jsonLd = extractRecipeJsonLdFromHtml(html);
+        if (jsonLd.imageUrl && !externalImageUrl) {
+          externalImageUrl = jsonLd.imageUrl;
         }
-      } catch (ogErr) {
-        console.warn("Błąd pobierania bezpośredniego HTML/OpenGraph:", ogErr);
+        if (jsonLd.text) {
+          extractedText += (extractedText ? "\n" : "") + `JSON_LD_RECIPE:\n${jsonLd.text}`;
+        }
+
+        const ogImage =
+          extractMetaContent(html, "og:image") ||
+          extractMetaContent(html, "twitter:image");
+        if (ogImage && !externalImageUrl) {
+          externalImageUrl = ogImage;
+        }
+
+        const ogTitle = extractMetaContent(html, "og:title");
+        const ogDescription =
+          extractMetaContent(html, "og:description") ||
+          extractMetaContent(html, "description");
+        if (ogTitle || ogDescription) {
+          extractedText +=
+            (extractedText ? "\n" : "") +
+            [ogTitle, ogDescription].filter(Boolean).join("\n");
+        }
       }
 
-      // Pobranie czystej treści strony przez Jina Reader (limit 15000 znaków)
-      try {
-        const jinaRes = await fetch(`https://r.jina.ai/${url}`, {
-          headers: { Accept: "text/plain" },
-          signal: AbortSignal.timeout(18000),
-        });
-        if (jinaRes.ok) {
-          const jinaText = await jinaRes.text();
-          if (jinaText.trim()) {
-            extractedText += (extractedText ? "\n" : "") + jinaText.slice(0, 15000);
-          }
+      if (jinaOutcome.status === "fulfilled" && jinaOutcome.value.trim()) {
+        const jinaText = jinaOutcome.value.trim();
+        const isInstagramBlockWall =
+          isInstagram &&
+          /sorry,\s*this page isn't available|log in to instagram|create an account|something went wrong/i.test(
+            jinaText,
+          ) &&
+          jinaText.length < 1800;
+        if (!isInstagramBlockWall) {
+          extractedText += (extractedText ? "\n" : "") + jinaText.slice(0, 14000);
         }
-      } catch (jinaErr) {
-        console.warn("Błąd pobierania treści przez Jina Reader:", jinaErr);
       }
     }
 
-    // Sprawdzenie czy po próbie ekstrakcji mamy jakikolwiek tekst lub zdjęcie
     if (!extractedText.trim() && !rawImageBase64) {
       return jsonResponse(
         {
           error:
-            "Nie udało się pobrać treści przepisu z podanego linku (np. prywatny profil lub blokada strony). Wklej opis rolki lub treść przepisu ręcznie.",
+            "Nie udało się automatycznie pobrać opisu tego posta (np. Instagram zablokował odczyt). Skopiuj opis rolki ręcznie i wklej go poniżej, albo użyj zakładki „Ze zdjęcia / Zrzutu”.",
         },
         422,
       );
     }
 
-    // 2. Trwały zapis okładki w Supabase Storage (aby link np. z IG nie wygasł)
-    let permanentImageUrl: string | null = null;
-    if (externalImageUrl && isSafePublicHttpUrl(externalImageUrl)) {
-      try {
-        const imgRes = await fetch(externalImageUrl, {
-          signal: AbortSignal.timeout(10000),
-        });
-        if (imgRes.ok) {
-          const rawContentType = imgRes.headers.get("content-type") || "";
-          const contentType = rawContentType.split(";")[0].trim().toLowerCase();
-
-          if (!contentType.startsWith("image/")) {
-            console.warn(`Pominięto zapis okładki — nieprawidłowy MIME: ${contentType}`);
-          } else {
-            const arrayBuffer = await imgRes.arrayBuffer();
-            if (arrayBuffer.byteLength > 10 * 1024 * 1024) {
-              console.warn("Pominięto zapis okładki — plik przekracza 10 MB.");
-            } else {
-              let fileExt = "jpg";
-              if (contentType.includes("png")) {
-                fileExt = "png";
-              } else if (contentType.includes("webp")) {
-                fileExt = "webp";
-              }
-
-              const fileName = `imported/${crypto.randomUUID()}.${fileExt}`;
-
-              const { error: uploadError } = await supabase.storage
-                .from("recipe-images")
-                .upload(fileName, arrayBuffer, { contentType, upsert: false });
-
-              if (!uploadError) {
-                const { data: publicUrlData } = supabase.storage
-                  .from("recipe-images")
-                  .getPublicUrl(fileName);
-                permanentImageUrl = publicUrlData.publicUrl;
-              } else {
-                console.warn("Błąd zapisu okładki w Storage:", uploadError.message);
-              }
-            }
-          }
-        }
-      } catch (imgErr) {
-        console.warn("Nie udało się skopiować zdjęcia do Supabase Storage:", imgErr);
-      }
-    }
-
-    // 3. Wywołanie Gemini API ze sztywnym schematem JSON (Structured Outputs pod Thermomix)
+    // 2. Zapis okładki w Supabase Storage (opcjonalny, równoległy z Gemini REST lub przed)
     const prompt = `
 Jesteś profesjonalnym szefem kuchni i tłumaczem kulinarnym.
 Przeanalizuj dostarczony materiał (tekst ze strony/Instagrama i/lub zdjęcie).
@@ -393,9 +492,9 @@ Przeanalizuj dostarczony materiał (tekst ze strony/Instagrama i/lub zdjęcie).
 6. Jeśli w kroku występuje pieczenie, gotowanie, odstawienie lub smażenie przez określony czas, przelicz ten czas na sekundy i wpisz w pole "timer_seconds" (np. 10 minut = 600). Jeśli brak czasu, wpisz 0.
 `.trim();
 
-    const contents: GeminiContentPart[] = [{ text: prompt }];
+    const parts: GeminiPart[] = [{ text: prompt }];
     if (extractedText.trim()) {
-      contents.push({ text: `TREŚĆ ŹRÓDŁOWA:\n${extractedText.trim()}` });
+      parts.push({ text: `TREŚĆ ŹRÓDŁOWA:\n${extractedText.trim()}` });
     }
 
     if (rawImageBase64) {
@@ -406,7 +505,7 @@ Przeanalizuj dostarczony materiał (tekst ze strony/Instagrama i/lub zdjęcie).
       const resolvedMimeType = rawMimeType || dataUrlMatch?.[1] || "image/jpeg";
       const resolvedBase64 = dataUrlMatch?.[2] || rawImageBase64;
 
-      contents.push({
+      parts.push({
         inlineData: {
           data: resolvedBase64,
           mimeType: resolvedMimeType,
@@ -415,133 +514,70 @@ Przeanalizuj dostarczony materiał (tekst ze strony/Instagrama i/lub zdjęcie).
     }
 
     const candidateModels = Array.from(
-      new Set([
-        geminiModel,
-        "gemini-3.5-flash-lite",
-        "gemini-flash-latest",
-      ]),
+      new Set([geminiModel, "gemini-flash-latest", "gemini-3.8-flash"]),
     );
 
-    const generateConfig = {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          title: { type: Type.STRING, description: "Nazwa potrawy po polsku" },
-          description: {
-            type: Type.STRING,
-            description: "Krótki, apetyczny opis potrawy (1-2 zdania)",
-          },
-          prep_time_minutes: {
-            type: Type.INTEGER,
-            description: "Czas przygotowania w minutach",
-          },
-          cook_time_minutes: {
-            type: Type.INTEGER,
-            description: "Czas gotowania/pieczenia w minutach",
-          },
-          servings: { type: Type.INTEGER, description: "Liczba porcji" },
-          category: {
-            type: Type.STRING,
-            description:
-              "Jedna z kategorii: Śniadanie, Obiad, Kolacja, Deser, Przekąska, Napój, Wypieki",
-          },
-          tags: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description: "Tagi np. Szybkie, Włoskie, Wegetariańskie, Kurczak",
-          },
-          ingredients: {
-            type: Type.ARRAY,
-            description: "Pełna lista wszystkich składników",
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                amount: { type: Type.NUMBER },
-                unit: { type: Type.STRING },
-              },
-              required: ["name", "amount", "unit"],
-            },
-          },
-          steps: {
-            type: Type.ARRAY,
-            description: "Kroki przygotowania w stylu Thermomix",
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                step_number: { type: Type.INTEGER },
-                instruction: {
-                  type: Type.STRING,
-                  description: "Jasna instrukcja co zrobić w tym kroku",
-                },
-                step_ingredients: {
-                  type: Type.ARRAY,
-                  description:
-                    "Składniki dodawane konkretnie w tym kroku wraz z ilością",
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      name: { type: Type.STRING },
-                      amount: { type: Type.NUMBER },
-                      unit: { type: Type.STRING },
-                    },
-                    required: ["name", "amount", "unit"],
-                  },
-                },
-                timer_seconds: {
-                  type: Type.INTEGER,
-                  description:
-                    "Czas minutnika w sekundach (0 jeśli krok nie wymaga odliczania czasu)",
-                },
-                tip: {
-                  type: Type.STRING,
-                  description: "Opcjonalna wskazówka kulinarna do kroku",
-                },
-              },
-              required: [
-                "step_number",
-                "instruction",
-                "step_ingredients",
-                "timer_seconds",
-              ],
-            },
-          },
-        },
-        required: [
-          "title",
-          "prep_time_minutes",
-          "cook_time_minutes",
-          "servings",
-          "category",
-          "ingredients",
-          "steps",
-        ],
+    const requestBody = JSON.stringify({
+      contents: [{ role: "user", parts }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: RECIPE_RESPONSE_SCHEMA,
       },
-    };
+    });
 
-    let response: Awaited<ReturnType<typeof ai.models.generateContent>> | null = null;
+    const imageUploadPromise = externalImageUrl
+      ? uploadImageToSupabaseStorage(supabaseUrl, supabaseServiceKey, externalImageUrl)
+      : Promise.resolve<string | null>(null);
+
+    let generatedText: string | null = null;
     const modelErrors: string[] = [];
 
     for (const modelName of candidateModels) {
       try {
-        response = await ai.models.generateContent({
-          model: modelName,
-          contents,
-          config: generateConfig,
-        });
+        const geminiRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": geminiApiKey,
+            },
+            body: requestBody,
+            signal: AbortSignal.timeout(22000),
+          },
+        );
+
+        const geminiJson = (await geminiRes.json()) as {
+          candidates?: Array<{
+            content?: { parts?: Array<{ text?: string }> };
+          }>;
+          error?: { message?: string };
+        };
+
+        if (!geminiRes.ok) {
+          throw new Error(geminiJson.error?.message || `HTTP ${geminiRes.status}`);
+        }
+
+        const text = geminiJson.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) {
+          throw new Error("Pusta odpowiedź modelu Gemini.");
+        }
+
+        generatedText = text;
         break;
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
         modelErrors.push(`${modelName}: ${errMsg}`);
-        console.warn(`Model ${modelName} niedostępny lub przeciążony, próbuję kolejny:`, errMsg);
-        await new Promise((resolve) => setTimeout(resolve, 350));
+        console.warn(`Model ${modelName} nie odpowiedział:`, errMsg);
       }
     }
 
-    if (!response) {
+    const permanentImageUrl = await imageUploadPromise;
+
+    if (!generatedText) {
       const combined = modelErrors.join(" | ");
-      const isOverloaded = combined.includes("503") || combined.includes("UNAVAILABLE") || combined.includes("429");
+      const isOverloaded =
+        combined.includes("503") || combined.includes("UNAVAILABLE") || combined.includes("429");
       return jsonResponse(
         {
           error: isOverloaded
@@ -552,12 +588,7 @@ Przeanalizuj dostarczony materiał (tekst ze strony/Instagrama i/lub zdjęcie).
       );
     }
 
-    const responseText = response.text;
-    if (!responseText) {
-      throw new Error("Model Gemini nie zwrócił odpowiedzi JSON.");
-    }
-
-    const parsedRecipe = JSON.parse(responseText) as Record<string, unknown>;
+    const parsedRecipe = JSON.parse(generatedText) as Record<string, unknown>;
 
     return jsonResponse({
       recipe: {

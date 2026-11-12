@@ -138,6 +138,7 @@ export function SmartImportModal({
   const isMountedRef = useRef(true)
   const wasOpenRef = useRef(false)
   const triggeredAutoAnalyzeKeyRef = useRef<string | null>(null)
+  const analyzeAbortRef = useRef<AbortController | null>(null)
   const onAutoAnalyzeConsumedRef = useRef(onAutoAnalyzeConsumed)
 
   const [activeTab, setActiveTab] = useState<ImportTabId>('url')
@@ -245,8 +246,18 @@ export function SmartImportModal({
     isMountedRef.current = true
     return () => {
       isMountedRef.current = false
+      analyzeAbortRef.current?.abort()
     }
   }, [])
+
+  const handleCancelAnalysis = () => {
+    analyzeAbortRef.current?.abort()
+    analyzeAbortRef.current = null
+    setIsAnalyzing(false)
+    setErrorMessage(
+      'Przerwano analizę. Możesz wkleić opis rolki ręcznie poniżej lub użyć zakładki „Ze zdjęcia / Zrzutu”.',
+    )
+  }
 
   const runUrlAnalysis = useCallback(async (rawUrl: string, rawText: string) => {
     const url = rawUrl.trim()
@@ -257,6 +268,10 @@ export function SmartImportModal({
       return
     }
 
+    analyzeAbortRef.current?.abort()
+    const controller = new AbortController()
+    analyzeAbortRef.current = controller
+
     setErrorMessage(null)
     setIsAnalyzing(true)
 
@@ -264,6 +279,7 @@ export function SmartImportModal({
       const draft = await importRecipeWithAi({
         url: url || undefined,
         rawText: text || undefined,
+        signal: controller.signal,
       })
       if (!isMountedRef.current) return
       setPreviewDraft(draft)
@@ -275,6 +291,9 @@ export function SmartImportModal({
           : 'Nie udało się przeanalizować linku przez AI.',
       )
     } finally {
+      if (analyzeAbortRef.current === controller) {
+        analyzeAbortRef.current = null
+      }
       if (isMountedRef.current) {
         setIsAnalyzing(false)
       }
@@ -556,6 +575,15 @@ export function SmartImportModal({
                 aria-label="Trwa przetwarzanie przepisu przez AI"
                 className="h-2 w-full max-w-xs overflow-hidden rounded-full accent-amber-600 dark:accent-amber-400"
               />
+
+              <GlassButton
+                type="button"
+                variant="ghost"
+                size="md"
+                onClick={handleCancelAnalysis}
+              >
+                Anuluj analizę
+              </GlassButton>
             </div>
           </GlassCard>
         ) : previewDraft ? (

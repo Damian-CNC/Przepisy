@@ -1,6 +1,7 @@
 import { uploadRecipeImage } from './imageCompression'
 import {
   fetchRecipes,
+  getSupabasePublicConfig,
   insertRecipe,
   isSupabaseConfigured,
   supabase,
@@ -21,6 +22,7 @@ export interface ImportRecipePayload {
   rawText?: string
   imageBase64?: string
   mimeType?: string
+  signal?: AbortSignal
 }
 
 const VALID_SOURCE_PLATFORMS: ReadonlySet<SourcePlatform> = new Set([
@@ -173,49 +175,16 @@ function normalizeNutrition(raw: unknown): RecipeNutrition {
   return Object.keys(result).length > 0 ? result : null
 }
 
-async function extractEdgeFunctionErrorMessage(error: unknown): Promise<string> {
-  if (error && typeof error === 'object' && 'context' in error) {
-    const context = (error as { context?: unknown }).context
-    if (context instanceof Response) {
-      const status = context.status
-      try {
-        const body = (await context.clone().json()) as { error?: unknown; message?: unknown }
-        if (typeof body.error === 'string' && body.error.trim()) {
-          return body.error.trim()
-        }
-        if (typeof body.message === 'string' && body.message.trim()) {
-          return body.message.trim()
-        }
-      } catch {
-        // Ignoruj niepoprawny JSON z ciała błędu
-      }
-      if (status === 401 || status === 403) {
-        return 'Brak uprawnień do importu AI. Zaloguj się ponownie i spróbuj jeszcze raz.'
-      }
-      if (status === 429 || status === 503) {
-        return 'Asystent AI jest chwilowo przeciążony. Spróbuj ponownie za kilkanaście sekund.'
-      }
-      if (status >= 500) {
-        return `Błąd serwera podczas przetwarzania przepisu (HTTP ${status}).`
-      }
-      return `Nie udało się zaimportować przepisu (HTTP ${status}).`
-    }
-  }
-
-  if (error instanceof Error && error.message.trim()) {
-    return `Nie udało się połączyć z funkcją importu AI: ${error.message}`
-  }
-
-  return 'Wystąpił nieznany błąd podczas importu przepisu przez AI.'
-}
+const IMPORT_TIMEOUT_MS = 45_000
 
 /**
- * Wywołuje Edge Function `import-recipe` i normalizuje wynik do bezpiecznego obiektu `RecipeInsert`.
+ * Wywołuje Edge Function `import-recipe` z twardym limitem czasu 45 s oraz obsługą
+ * anulowania (`AbortSignal`) i normalizuje wynik do bezpiecznego obiektu `RecipeInsert`.
  */
 export async function importRecipeWithAi(payload: ImportRecipePayload): Promise<RecipeInsert> {
   assertSupabaseReady()
 
-  const trimmedPayload: ImportRecipePayload = {
+  const trimmedPayload = {
     url: payload.url?.trim() || undefined,
     rawText: payload.rawText?.trim() || undefined,
     imageBase64: payload.imageBase64?.trim() || undefined,
@@ -226,13 +195,81 @@ export async function importRecipeWithAi(payload: ImportRecipePayload): Promise<
     throw new Error('Podaj link do przepisu, tekst albo wybierz zdjęcie potrawy.')
   }
 
-  const { data, error } = await supabase.functions.invoke<unknown>('import-recipe', {
-    body: trimmedPayload,
-  })
+  const { url: supabaseUrl, anonKey } = getSupabasePublicConfig()
+  const { data: sessionData } = await supabase.auth.getSession()
+  const accessToken = sessionData.session?.access_token
 
-  if (error) {
-    const message = await extractEdgeFunctionErrorMessage(error)
-    throw new Error(message)
+  const controller = new AbortController()
+  let timedOut = false
+
+  const onExternalAbort = () => controller.abort()
+  if (payload.signal) {
+    if (payload.signal.aborted) {
+      throw new Error('Analiza została przerwana.')
+    }
+    payload.signal.addEventListener('abort', onExternalAbort, { once: true })
+  }
+
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, IMPORT_TIMEOUT_MS)
+
+  let response: Response
+  try {
+    response = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/functions/v1/import-recipe`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: anonKey,
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      body: JSON.stringify(trimmedPayload),
+      signal: controller.signal,
+    })
+  } catch (err) {
+    if (timedOut) {
+      throw new Error(
+        'Przetwarzanie trwało zbyt długo (ponad 45 s). Wklej opis rolki ręcznie poniżej lub użyj zakładki „Ze zdjęcia / Zrzutu”.',
+      )
+    }
+    if (payload.signal?.aborted) {
+      throw new Error('Analiza została anulowana.')
+    }
+    throw new Error(
+      err instanceof Error && err.message
+        ? `Błąd połączenia z serwerem AI: ${err.message}`
+        : 'Błąd połączenia z serwerem AI.',
+    )
+  } finally {
+    window.clearTimeout(timeoutId)
+    payload.signal?.removeEventListener('abort', onExternalAbort)
+  }
+
+  let data: unknown = null
+  try {
+    data = await response.json()
+  } catch {
+    data = null
+  }
+
+  if (!response.ok) {
+    const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : null
+    const serverMsg =
+      record && typeof record.error === 'string' && record.error.trim()
+        ? record.error.trim()
+        : null
+
+    if (serverMsg) {
+      throw new Error(serverMsg)
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new Error('Brak uprawnień do importu AI. Zaloguj się ponownie i spróbuj jeszcze raz.')
+    }
+    if (response.status === 429 || response.status === 503) {
+      throw new Error('Asystent AI jest chwilowo przeciążony. Spróbuj ponownie za kilkanaście sekund.')
+    }
+    throw new Error(`Błąd serwera podczas przetwarzania przepisu (HTTP ${response.status}).`)
   }
 
   if (!data || typeof data !== 'object') {
