@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { motion, useReducedMotion, type HTMLMotionProps } from 'framer-motion'
 import { Loader2 } from 'lucide-react'
-import { cn } from './cn'
+import { cn, hasExplicitDisplayClass } from './cn'
 
 export type GlassButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 export type GlassButtonSize = 'sm' | 'md' | 'lg'
@@ -96,7 +96,8 @@ export function GlassButton({
       }
       transition={{ type: 'spring', stiffness: 500, damping: 32, mass: 0.8 }}
       className={cn(
-        'inline-flex select-none items-center justify-center font-medium',
+        !hasExplicitDisplayClass(className) && 'inline-flex',
+        'select-none items-center justify-center font-medium',
         'transition-colors duration-150',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-600 dark:focus-visible:outline-amber-400',
         'disabled:cursor-not-allowed disabled:opacity-55',

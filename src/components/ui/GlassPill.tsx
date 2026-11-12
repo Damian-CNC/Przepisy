@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
 import { motion, useReducedMotion, type HTMLMotionProps } from 'framer-motion'
-import { cn } from './cn'
+import { cn, hasExplicitDisplayClass } from './cn'
 
 export type GlassPillVariant = 'surface' | 'active' | 'island' | 'tag'
 export type GlassPillSize = 'sm' | 'md' | 'lg'
@@ -93,7 +93,8 @@ export function GlassPill(props: GlassPillProps) {
     : STATIC_SIZE_CLASSES[size]
 
   const baseClassName = cn(
-    'inline-flex items-center justify-center rounded-full font-medium',
+    !hasExplicitDisplayClass(className) && 'inline-flex',
+    'items-center justify-center rounded-full font-medium',
     VARIANT_CLASSES[variant],
     sizeClass,
     isButton

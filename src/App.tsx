@@ -209,7 +209,7 @@ export function App() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className="relative min-h-dvh text-stone-900 dark:text-stone-50">
+      <div className="relative min-h-dvh overflow-x-clip text-stone-900 dark:text-stone-50">
         <AmbientBackground />
 
         {isAuthLoading ? (
@@ -278,9 +278,9 @@ export function App() {
               />
             ) : (
               <div className="pb-10">
-                <header className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pt-[calc(env(safe-area-inset-top,0px)+1.25rem)] sm:gap-5 sm:px-6">
+                <header className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pt-[calc(env(safe-area-inset-top,0px)+1.5rem)] sm:gap-5 sm:px-6">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="mb-1.5 flex items-center gap-2">
                         <GlassPill
                           variant="tag"
@@ -428,7 +428,7 @@ export function App() {
                   <div
                     role="group"
                     aria-label="Filtry kategorii przepisów"
-                    className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0"
+                    className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible"
                   >
                     {FILTER_OPTIONS.map((category) => {
                       const active = selectedFilter === category
