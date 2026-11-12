@@ -1,0 +1,249 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light dark;
+
+  --canvas-bg-light: #fbf8f3;
+  --canvas-bg-dark: #09090b;
+  --canvas-bg: var(--canvas-bg-light);
+
+  --text-primary-light: #1c1917;
+  --text-primary-dark: #faf8f5;
+  --text-primary: var(--text-primary-light);
+
+  --text-secondary-light: #57534e;
+  --text-secondary-dark: #a8a29e;
+  --text-secondary: var(--text-secondary-light);
+
+  --accent-primary-light: #b45309;
+  --accent-primary-dark: #f59e0b;
+  --accent-primary: var(--accent-primary-light);
+
+  --glass-bg-light: rgba(255, 255, 255, 0.65);
+  --glass-bg-dark: rgba(24, 24, 27, 0.55);
+  --glass-bg: var(--glass-bg-light);
+
+  --glass-bg-elevated-light: rgba(255, 255, 255, 0.78);
+  --glass-bg-elevated-dark: rgba(24, 24, 27, 0.75);
+  --glass-bg-elevated: var(--glass-bg-elevated-light);
+
+  --glass-border-light: rgba(255, 255, 255, 0.4);
+  --glass-border-dark: rgba(255, 255, 255, 0.15);
+  --glass-border: var(--glass-border-light);
+
+  --glass-shadow-light:
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.6),
+    0 8px 32px 0 rgba(28, 25, 23, 0.08);
+  --glass-shadow-dark:
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.12),
+    0 12px 40px 0 rgba(0, 0, 0, 0.45);
+  --glass-shadow: var(--glass-shadow-light);
+
+  --scrollbar-track-light: rgba(28, 25, 23, 0.05);
+  --scrollbar-track-dark: rgba(255, 255, 255, 0.05);
+  --scrollbar-thumb-light: rgba(87, 83, 78, 0.35);
+  --scrollbar-thumb-dark: rgba(168, 162, 158, 0.35);
+
+  @media (prefers-color-scheme: dark) {
+    --canvas-bg: var(--canvas-bg-dark);
+    --text-primary: var(--text-primary-dark);
+    --text-secondary: var(--text-secondary-dark);
+    --accent-primary: var(--accent-primary-dark);
+    --glass-bg: var(--glass-bg-dark);
+    --glass-bg-elevated: var(--glass-bg-elevated-dark);
+    --glass-border: var(--glass-border-dark);
+    --glass-shadow: var(--glass-shadow-dark);
+  }
+
+  @supports (color: light-dark(white, black)) {
+    --canvas-bg: light-dark(var(--canvas-bg-light), var(--canvas-bg-dark));
+    --text-primary: light-dark(var(--text-primary-light), var(--text-primary-dark));
+    --text-secondary: light-dark(var(--text-secondary-light), var(--text-secondary-dark));
+    --accent-primary: light-dark(var(--accent-primary-light), var(--accent-primary-dark));
+    --glass-bg: light-dark(var(--glass-bg-light), var(--glass-bg-dark));
+    --glass-bg-elevated: light-dark(var(--glass-bg-elevated-light), var(--glass-bg-elevated-dark));
+    --glass-border: light-dark(var(--glass-border-light), var(--glass-border-dark));
+    scrollbar-color:
+      light-dark(var(--scrollbar-thumb-light), var(--scrollbar-thumb-dark))
+      light-dark(var(--scrollbar-track-light), var(--scrollbar-track-dark));
+  }
+
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    system-ui, "Segoe UI", Roboto, sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  accent-color: var(--accent-primary);
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+  background-color: var(--canvas-bg);
+  color: var(--text-primary);
+}
+
+/* Subtle Ambient Mesh animation (respects reduced motion) */
+@keyframes ambient-drift-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(3%, 4%, 0) scale(1.06);
+  }
+}
+
+@keyframes ambient-drift-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-4%, 3%, 0) scale(1.05);
+  }
+}
+
+@keyframes ambient-drift-c {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(2%, -3%, 0) scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ambient-blob-a {
+    animation: ambient-drift-a 22s ease-in-out infinite;
+  }
+  .ambient-blob-b {
+    animation: ambient-drift-b 26s ease-in-out infinite;
+  }
+  .ambient-blob-c {
+    animation: ambient-drift-c 30s ease-in-out infinite;
+  }
+}
+
+/* Native <dialog> scroll containment & top-layer transitions */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background-color: rgba(12, 10, 9, 0);
+  backdrop-filter: blur(0px);
+  transition-property: background-color, backdrop-filter, display, overlay;
+  transition-duration: 0.28s;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  transition-behavior: allow-discrete;
+}
+
+dialog.glass-modal {
+  opacity: 0;
+  transition-property: opacity, transform, display, overlay;
+  transition-duration: 0.28s;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  transition-behavior: allow-discrete;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  dialog.glass-modal {
+    transform: translateY(12px) scale(0.96);
+  }
+}
+
+dialog.glass-modal[open]:where(:not([data-closing])) {
+  opacity: 1;
+
+  @starting-style {
+    opacity: 0;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    transform: translateY(0) scale(1);
+
+    @starting-style {
+      transform: translateY(12px) scale(0.96);
+    }
+  }
+
+  &::backdrop {
+    background-color: rgba(12, 10, 9, 0.38);
+    backdrop-filter: blur(6px);
+
+    @starting-style {
+      background-color: rgba(12, 10, 9, 0);
+      backdrop-filter: blur(0px);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog.glass-modal,
+  dialog::backdrop {
+    transition-duration: 0.1s;
+  }
+}
+
+/* Scroll-driven parallax for recipe hero image */
+@keyframes recipe-hero-parallax {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(0, 48px, 0) scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @supports ((animation-timeline: view()) and (animation-range: entry)) {
+    .recipe-hero-parallax-wrapper {
+      view-timeline: --recipe-hero block;
+    }
+
+    .recipe-hero-parallax-media {
+      will-change: transform;
+      animation: recipe-hero-parallax linear both;
+      animation-timeline: --recipe-hero;
+      animation-range: exit 0% exit 100%;
+    }
+  }
+}
+
+/* MagicUI-style specular shimmer for AI loading state */
+@keyframes magic-shimmer-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.magic-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .magic-shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      110deg,
+      transparent 20%,
+      rgba(255, 255, 255, 0.55) 45%,
+      rgba(251, 191, 36, 0.28) 52%,
+      transparent 75%
+    );
+    animation: magic-shimmer-sweep 1.8s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    pointer-events: none;
+  }
+}

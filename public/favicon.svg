@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F59E0B" />
+      <stop offset="55%" stop-color="#EA580C" />
+      <stop offset="100%" stop-color="#B45309" />
+    </linearGradient>
+    <linearGradient id="glass" x1="96" y1="88" x2="416" y2="424" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.45" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.14" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bg)" />
+  <circle cx="120" cy="110" r="140" fill="#FEF3C7" fill-opacity="0.35" />
+  <circle cx="400" cy="400" r="150" fill="#10B981" fill-opacity="0.22" />
+  <rect x="64" y="64" width="384" height="384" rx="88" fill="url(#glass)" stroke="#FFFFFF" stroke-opacity="0.55" stroke-width="6" />
+  <path d="M184 294v56c0 13.255 10.745 24 24 24h96c13.255 0 24-10.745 24-24v-56" stroke="#FFFFFF" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M168 294c-26.51 0-48-21.49-48-48 0-23.383 16.717-42.86 38.867-47.136C166.935 162.893 199.104 136 237.6 136c17.916 0 34.477 5.826 47.902 15.69C297.694 144.442 311.883 140 327 140c37.555 0 68 30.445 68 68 0 3.743-.303 7.416-.885 10.996C404.88 227.646 412 241.006 412 256c0 20.987-17.013 38-38 38H168Z" fill="#FFFFFF" fill-opacity="0.94" />
+  <path d="M358 118l8 20 20 8-20 8-8 20-8-20-20-8 20-8 8-20Z" fill="#FEF3C7" />
+</svg>
