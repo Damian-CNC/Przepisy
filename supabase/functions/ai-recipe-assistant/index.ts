@@ -3,13 +3,16 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-type AssistantMode = "discover" | "edit";
+type AssistantMode = "discover" | "edit" | "generate-image";
 
 interface AiAssistantRequest {
   mode?: unknown;
   userPrompt?: unknown;
   currentRecipe?: unknown;
   useWebSearch?: unknown;
+  title?: unknown;
+  description?: unknown;
+  category?: unknown;
 }
 
 interface GeminiCandidatePart {
@@ -226,6 +229,205 @@ function geminiErrorResponse(errors: string[]): Response {
   );
 }
 
+function decodeBase64ToUint8Array(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function uploadBytesToSupabaseStorage(
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  bytes: ArrayBuffer | Uint8Array,
+  contentType: string,
+  folder = "generated",
+): Promise<string | null> {
+  try {
+    const normalizedType = contentType.split(";")[0].trim().toLowerCase();
+    if (!normalizedType.startsWith("image/")) return null;
+    if (bytes.byteLength === 0 || bytes.byteLength > 6 * 1024 * 1024) return null;
+
+    let fileExt = "jpg";
+    if (normalizedType.includes("png")) fileExt = "png";
+    else if (normalizedType.includes("webp")) fileExt = "webp";
+
+    const fileName = `${folder}/${crypto.randomUUID()}.${fileExt}`;
+    const baseUrl = supabaseUrl.replace(/\/+$/, "");
+    const uploadRes = await fetch(`${baseUrl}/storage/v1/object/recipe-images/${fileName}`, {
+      method: "POST",
+      headers: {
+        apikey: supabaseServiceKey,
+        Authorization: `Bearer ${supabaseServiceKey}`,
+        "Content-Type": normalizedType,
+        "x-upsert": "false",
+      },
+      body: bytes,
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!uploadRes.ok) {
+      console.warn("Błąd zapisu okładki w Storage:", uploadRes.status);
+      return null;
+    }
+    return `${baseUrl}/storage/v1/object/public/recipe-images/${fileName}`;
+  } catch (err) {
+    console.warn("Nie udało się zapisać okładki w Supabase Storage:", err);
+    return null;
+  }
+}
+
+async function tryGenerateFoodCoverWithGemini(
+  geminiApiKey: string,
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  title: string,
+  description?: string | null,
+  category?: string | null,
+): Promise<string | null> {
+  const prompt = `Professional overhead editorial food photography of finished dish: "${title}"${
+    category ? ` (${category})` : ""
+  }.${description ? ` Context: ${description}.` : ""} Warm natural kitchen daylight, appetizing plated homemade food, shallow depth of field, high detail, photorealistic, no text, no watermarks, no logos.`;
+
+  const imageModels = ["gemini-2.5-flash-image", "gemini-2.0-flash-exp-image-generation"];
+  const body = JSON.stringify({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseModalities: ["TEXT", "IMAGE"],
+      imageConfig: { aspectRatio: "4:3" },
+    },
+  });
+
+  for (const modelName of imageModels) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": geminiApiKey,
+          },
+          body,
+          signal: AbortSignal.timeout(14000),
+        },
+      );
+      if (!res.ok) continue;
+
+      const json = (await res.json()) as {
+        candidates?: Array<{
+          content?: {
+            parts?: Array<{
+              inlineData?: { mimeType?: string; data?: string };
+            }>;
+          };
+        }>;
+      };
+
+      const imagePart = (json.candidates?.[0]?.content?.parts ?? []).find(
+        (part) => typeof part.inlineData?.data === "string" && part.inlineData.data.length > 100,
+      );
+      if (!imagePart?.inlineData?.data) continue;
+
+      const mimeType = imagePart.inlineData.mimeType || "image/png";
+      const bytes = decodeBase64ToUint8Array(imagePart.inlineData.data);
+      const uploaded = await uploadBytesToSupabaseStorage(
+        supabaseUrl,
+        supabaseServiceKey,
+        bytes,
+        mimeType,
+        "generated",
+      );
+      if (uploaded) return uploaded;
+    } catch (err) {
+      console.warn(`Generowanie okładki modelem ${modelName} nie powiodło się:`, err);
+    }
+  }
+
+  return null;
+}
+
+async function tryWikipediaFoodThumbnail(
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  title: string,
+): Promise<string | null> {
+  const cleanTitle = title.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleanTitle) return null;
+
+  for (const lang of ["pl", "en"]) {
+    try {
+      const searchUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
+        cleanTitle,
+      )}&gsrlimit=3&prop=pageimages&pithumbsize=1000&format=json&origin=*`;
+      const res = await fetch(searchUrl, { signal: AbortSignal.timeout(5000) });
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        query?: {
+          pages?: Record<string, { thumbnail?: { source?: string } }>;
+        };
+      };
+      const pages = Object.values(data.query?.pages ?? {});
+      for (const page of pages) {
+        const src = page.thumbnail?.source;
+        if (src && src.startsWith("https://") && !/\.svg(\?|$)/i.test(src)) {
+          const imgRes = await fetch(src, {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+              Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+            },
+            signal: AbortSignal.timeout(6000),
+          });
+          if (!imgRes.ok) continue;
+          const contentType = imgRes.headers.get("content-type") || "image/jpeg";
+          const bytes = await imgRes.arrayBuffer();
+          const uploaded = await uploadBytesToSupabaseStorage(
+            supabaseUrl,
+            supabaseServiceKey,
+            bytes,
+            contentType,
+            "generated",
+          );
+          if (uploaded) return uploaded;
+        }
+      }
+    } catch {
+      // Spróbuj kolejnej wersji językowej
+    }
+  }
+  return null;
+}
+
+async function generateAndUploadFoodCover(params: {
+  geminiApiKey: string;
+  supabaseUrl?: string;
+  supabaseServiceKey?: string;
+  title: string;
+  description?: string | null;
+  category?: string | null;
+}): Promise<string | null> {
+  if (!params.supabaseUrl || !params.supabaseServiceKey) return null;
+
+  const aiCover = await tryGenerateFoodCoverWithGemini(
+    params.geminiApiKey,
+    params.supabaseUrl,
+    params.supabaseServiceKey,
+    params.title,
+    params.description,
+    params.category,
+  );
+  if (aiCover) return aiCover;
+
+  return await tryWikipediaFoodThumbnail(
+    params.supabaseUrl,
+    params.supabaseServiceKey,
+    params.title,
+  );
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -244,11 +446,54 @@ Deno.serve(async (req: Request) => {
     }
 
     const mode = payload.mode;
-    if (mode !== "discover" && mode !== "edit") {
+    if (mode !== "discover" && mode !== "edit" && mode !== "generate-image") {
       return jsonResponse(
-        { error: 'Nieprawidłowy parametr "mode". Oczekiwano "discover" lub "edit".' },
+        {
+          error:
+            'Nieprawidłowy parametr "mode". Oczekiwano "discover", "edit" lub "generate-image".',
+        },
         400,
       );
+    }
+
+    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+    if (!geminiApiKey) {
+      throw new Error("Brak klucza GEMINI_API_KEY w zmiennych środowiskowych Supabase.");
+    }
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (mode === ("generate-image" satisfies AssistantMode)) {
+      const title = typeof payload.title === "string" ? payload.title.trim() : "";
+      if (!title) {
+        return jsonResponse({ error: "Podaj nazwę potrawy do wygenerowania zdjęcia." }, 400);
+      }
+      if (!supabaseUrl || !supabaseServiceKey) {
+        throw new Error("Brak konfiguracji Storage w zmiennych środowiskowych Supabase.");
+      }
+
+      const description =
+        typeof payload.description === "string" ? payload.description.trim() : null;
+      const category = typeof payload.category === "string" ? payload.category.trim() : null;
+
+      const imageUrl = await generateAndUploadFoodCover({
+        geminiApiKey,
+        supabaseUrl,
+        supabaseServiceKey,
+        title,
+        description,
+        category,
+      });
+
+      if (!imageUrl) {
+        return jsonResponse(
+          { error: "Nie udało się teraz wygenerować ani dobrać zdjęcia dla tej potrawy." },
+          502,
+        );
+      }
+
+      return jsonResponse({ image_url: imageUrl });
     }
 
     const userPrompt =
@@ -258,11 +503,6 @@ Deno.serve(async (req: Request) => {
         { error: "Podaj opis lub polecenie w polu userPrompt." },
         400,
       );
-    }
-
-    const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-    if (!geminiApiKey) {
-      throw new Error("Brak klucza GEMINI_API_KEY w zmiennych środowiskowych Supabase.");
     }
 
     const configuredModel = (Deno.env.get("GEMINI_MODEL") || "").trim();
@@ -348,11 +588,30 @@ ${webContext ? `\nMATERIAŁ ŹRÓDŁOWY Z SIECI:\n${webContext.slice(0, 14000)}`
 
       const parsedRecipe = JSON.parse(structuredResult.text) as Record<string, unknown>;
 
+      const recipeTitle =
+        typeof parsedRecipe.title === "string" ? parsedRecipe.title.trim() : "";
+      const recipeDesc =
+        typeof parsedRecipe.description === "string" ? parsedRecipe.description.trim() : null;
+      const recipeCat =
+        typeof parsedRecipe.category === "string" ? parsedRecipe.category.trim() : null;
+
+      const generatedImageUrl = recipeTitle
+        ? await generateAndUploadFoodCover({
+            geminiApiKey,
+            supabaseUrl,
+            supabaseServiceKey,
+            title: recipeTitle,
+            description: recipeDesc,
+            category: recipeCat,
+          })
+        : null;
+
       return jsonResponse({
         recipe: {
           ...parsedRecipe,
           source_url: sourceUrl,
           source_platform: useWebSearch ? "web" : "ai",
+          image_url: generatedImageUrl,
         },
       });
     }

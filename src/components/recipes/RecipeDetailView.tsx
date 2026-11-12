@@ -13,12 +13,14 @@ import {
   Minus,
   Play,
   Plus,
+  Sparkles,
   Timer,
   Trash2,
   Users,
 } from 'lucide-react'
 import {
   formatScaledAmount,
+  generateRecipeCoverImage,
   groupIngredientsBySection,
   toSafeHttpUrl,
 } from '../../lib/recipesApi'
@@ -57,6 +59,7 @@ export function RecipeDetailView({
   const baseServings = recipe.servings && recipe.servings > 0 ? recipe.servings : 2
   const [targetServings, setTargetServings] = useState<number>(baseServings)
   const [isUpdatingPhoto, setIsUpdatingPhoto] = useState(false)
+  const [isGeneratingPhoto, setIsGeneratingPhoto] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -101,6 +104,28 @@ export function RecipeDetailView({
       )
     } finally {
       setIsUpdatingPhoto(false)
+    }
+  }
+
+  const handleGenerateAiPhoto = async () => {
+    if (isGeneratingPhoto || isUpdatingPhoto) return
+    setPhotoError(null)
+    setIsGeneratingPhoto(true)
+    try {
+      const imageUrl = await generateRecipeCoverImage({
+        title: recipe.title,
+        description: recipe.description,
+        category: recipe.category,
+      })
+      await onUpdateRecipe(recipe.id, { image_url: imageUrl })
+    } catch (err) {
+      setPhotoError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Nie udało się wygenerować zdjęcia AI dla tego przepisu.',
+      )
+    } finally {
+      setIsGeneratingPhoto(false)
     }
   }
 
@@ -170,6 +195,25 @@ export function RecipeDetailView({
           className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/30"
           aria-hidden="true"
         />
+
+        {!recipe.image_url && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center pt-10">
+            <div className="pointer-events-auto">
+              <GlassButton
+                type="button"
+                variant="secondary"
+                size="md"
+                isLoading={isGeneratingPhoto}
+                loadingText="Tworzę zdjęcie..."
+                leftIcon={<Sparkles className="size-4 text-amber-300" aria-hidden="true" />}
+                onClick={() => void handleGenerateAiPhoto()}
+                className="border-white/35 bg-zinc-950/65 text-white hover:bg-zinc-950/80 dark:border-white/25 dark:bg-zinc-950/75 dark:text-white"
+              >
+                Wygeneruj zdjęcie AI
+              </GlassButton>
+            </div>
+          </div>
+        )}
 
         {/* Pasek górnych akcji na zdjęciu (z zapasem poniżej Dynamic Island na iPhone) */}
         <div className="absolute inset-x-0 top-0 z-10 mx-auto flex max-w-4xl items-center justify-between gap-2 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] sm:px-6">

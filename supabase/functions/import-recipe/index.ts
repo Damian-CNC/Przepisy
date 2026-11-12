@@ -10,11 +10,20 @@ interface ImportRecipeRequest {
   mimeType?: string;
 }
 
+interface ApifyChildPost {
+  displayUrl?: string;
+  thumbnailUrl?: string;
+}
+
 interface ApifyInstagramItem {
   caption?: string;
   displayUrl?: string;
   thumbnailUrl?: string;
+  thumbnailSrc?: string;
+  imageUrl?: string;
+  coverUrl?: string;
   images?: string[];
+  childPosts?: ApifyChildPost[];
 }
 
 type GeminiPart =
@@ -253,43 +262,32 @@ const RECIPE_RESPONSE_SCHEMA = {
   ],
 };
 
-async function uploadImageToSupabaseStorage(
+async function uploadBytesToSupabaseStorage(
   supabaseUrl: string,
   supabaseServiceKey: string,
-  externalImageUrl: string,
+  bytes: ArrayBuffer | Uint8Array,
+  contentType: string,
+  folder = "imported",
 ): Promise<string | null> {
-  if (!isSafePublicHttpUrl(externalImageUrl)) return null;
-
   try {
-    const imgRes = await fetch(externalImageUrl, {
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!imgRes.ok) return null;
-
-    const rawContentType = imgRes.headers.get("content-type") || "";
-    const contentType = rawContentType.split(";")[0].trim().toLowerCase();
-    if (!contentType.startsWith("image/")) {
+    const normalizedType = contentType.split(";")[0].trim().toLowerCase();
+    if (!normalizedType.startsWith("image/")) {
       return null;
     }
 
-    const contentLength = Number(imgRes.headers.get("content-length") || "0");
-    if (contentLength > 6 * 1024 * 1024) {
-      return null;
-    }
-
-    const arrayBuffer = await imgRes.arrayBuffer();
-    if (arrayBuffer.byteLength > 6 * 1024 * 1024) {
+    const byteLength = bytes instanceof Uint8Array ? bytes.byteLength : bytes.byteLength;
+    if (byteLength === 0 || byteLength > 6 * 1024 * 1024) {
       return null;
     }
 
     let fileExt = "jpg";
-    if (contentType.includes("png")) {
+    if (normalizedType.includes("png")) {
       fileExt = "png";
-    } else if (contentType.includes("webp")) {
+    } else if (normalizedType.includes("webp")) {
       fileExt = "webp";
     }
 
-    const fileName = `imported/${crypto.randomUUID()}.${fileExt}`;
+    const fileName = `${folder}/${crypto.randomUUID()}.${fileExt}`;
     const baseUrl = supabaseUrl.replace(/\/+$/, "");
 
     const uploadRes = await fetch(`${baseUrl}/storage/v1/object/recipe-images/${fileName}`, {
@@ -297,10 +295,10 @@ async function uploadImageToSupabaseStorage(
       headers: {
         apikey: supabaseServiceKey,
         Authorization: `Bearer ${supabaseServiceKey}`,
-        "Content-Type": contentType,
+        "Content-Type": normalizedType,
         "x-upsert": "false",
       },
-      body: arrayBuffer,
+      body: bytes,
       signal: AbortSignal.timeout(8000),
     });
 
@@ -311,9 +309,193 @@ async function uploadImageToSupabaseStorage(
 
     return `${baseUrl}/storage/v1/object/public/recipe-images/${fileName}`;
   } catch (err) {
+    console.warn("Nie udało się zapisać okładki w Supabase Storage:", err);
+    return null;
+  }
+}
+
+async function uploadImageToSupabaseStorage(
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  externalImageUrl: string,
+  referer?: string,
+): Promise<string | null> {
+  if (!isSafePublicHttpUrl(externalImageUrl)) return null;
+
+  try {
+    const imgRes = await fetch(externalImageUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+        Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        ...(referer ? { Referer: referer } : {}),
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!imgRes.ok) return null;
+
+    const rawContentType = imgRes.headers.get("content-type") || "";
+    const contentLength = Number(imgRes.headers.get("content-length") || "0");
+    if (contentLength > 6 * 1024 * 1024) {
+      return null;
+    }
+
+    const arrayBuffer = await imgRes.arrayBuffer();
+    return await uploadBytesToSupabaseStorage(
+      supabaseUrl,
+      supabaseServiceKey,
+      arrayBuffer,
+      rawContentType,
+      "imported",
+    );
+  } catch (err) {
     console.warn("Nie udało się skopiować zdjęcia do Supabase Storage:", err);
     return null;
   }
+}
+
+function decodeBase64ToUint8Array(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function tryGenerateFoodCoverWithGemini(
+  geminiApiKey: string,
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  title: string,
+  description?: string | null,
+  category?: string | null,
+): Promise<string | null> {
+  const prompt = `Professional overhead editorial food photography of finished dish: "${title}"${
+    category ? ` (${category})` : ""
+  }.${description ? ` Context: ${description}.` : ""} Warm natural kitchen daylight, appetizing plated homemade food, shallow depth of field, high detail, photorealistic, no text, no watermarks, no logos.`;
+
+  const imageModels = ["gemini-2.5-flash-image", "gemini-2.0-flash-exp-image-generation"];
+  const body = JSON.stringify({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseModalities: ["TEXT", "IMAGE"],
+      imageConfig: { aspectRatio: "4:3" },
+    },
+  });
+
+  for (const modelName of imageModels) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": geminiApiKey,
+          },
+          body,
+          signal: AbortSignal.timeout(13000),
+        },
+      );
+      if (!res.ok) continue;
+
+      const json = (await res.json()) as {
+        candidates?: Array<{
+          content?: {
+            parts?: Array<{
+              inlineData?: { mimeType?: string; data?: string };
+            }>;
+          };
+        }>;
+      };
+
+      const imagePart = (json.candidates?.[0]?.content?.parts ?? []).find(
+        (part) => typeof part.inlineData?.data === "string" && part.inlineData.data.length > 100,
+      );
+      if (!imagePart?.inlineData?.data) continue;
+
+      const mimeType = imagePart.inlineData.mimeType || "image/png";
+      const bytes = decodeBase64ToUint8Array(imagePart.inlineData.data);
+      const uploaded = await uploadBytesToSupabaseStorage(
+        supabaseUrl,
+        supabaseServiceKey,
+        bytes,
+        mimeType,
+        "generated",
+      );
+      if (uploaded) return uploaded;
+    } catch (err) {
+      console.warn(`Generowanie okładki modelem ${modelName} nie powiodło się:`, err);
+    }
+  }
+
+  return null;
+}
+
+async function tryWikipediaFoodThumbnail(
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  title: string,
+): Promise<string | null> {
+  const cleanTitle = title.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleanTitle) return null;
+
+  for (const lang of ["pl", "en"]) {
+    try {
+      const searchUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
+        cleanTitle,
+      )}&gsrlimit=3&prop=pageimages&pithumbsize=1000&format=json&origin=*`;
+      const res = await fetch(searchUrl, { signal: AbortSignal.timeout(4500) });
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        query?: {
+          pages?: Record<string, { thumbnail?: { source?: string } }>;
+        };
+      };
+      const pages = Object.values(data.query?.pages ?? {});
+      for (const page of pages) {
+        const src = page.thumbnail?.source;
+        if (src && isSafePublicHttpUrl(src) && !/\.svg(\?|$)/i.test(src)) {
+          const uploaded = await uploadImageToSupabaseStorage(
+            supabaseUrl,
+            supabaseServiceKey,
+            src,
+          );
+          if (uploaded) return uploaded;
+        }
+      }
+    } catch {
+      // Spróbuj kolejnej wersji językowej
+    }
+  }
+  return null;
+}
+
+async function generateAndUploadFoodCover(params: {
+  geminiApiKey: string;
+  supabaseUrl: string;
+  supabaseServiceKey: string;
+  title: string;
+  description?: string | null;
+  category?: string | null;
+}): Promise<string | null> {
+  const aiCover = await tryGenerateFoodCoverWithGemini(
+    params.geminiApiKey,
+    params.supabaseUrl,
+    params.supabaseServiceKey,
+    params.title,
+    params.description,
+    params.category,
+  );
+  if (aiCover) return aiCover;
+
+  return await tryWikipediaFoodThumbnail(
+    params.supabaseUrl,
+    params.supabaseServiceKey,
+    params.title,
+  );
 }
 
 Deno.serve(async (req: Request) => {
@@ -401,7 +583,12 @@ Deno.serve(async (req: Request) => {
               const candidateImage =
                 firstItem.displayUrl ||
                 firstItem.thumbnailUrl ||
-                (Array.isArray(firstItem.images) ? firstItem.images[0] : undefined);
+                firstItem.thumbnailSrc ||
+                firstItem.imageUrl ||
+                firstItem.coverUrl ||
+                (Array.isArray(firstItem.images) ? firstItem.images[0] : undefined) ||
+                firstItem.childPosts?.[0]?.displayUrl ||
+                firstItem.childPosts?.[0]?.thumbnailUrl;
               if (typeof candidateImage === "string" && candidateImage.trim()) {
                 externalImageUrl = candidateImage.trim();
               }
@@ -471,6 +658,15 @@ Deno.serve(async (req: Request) => {
           jinaText.length < 1800;
         if (!isInstagramBlockWall) {
           extractedText += (extractedText ? "\n" : "") + jinaText.slice(0, 14000);
+          if (!externalImageUrl) {
+            const mdImgMatch = jinaText.match(
+              /!\[[^\]]*\]\((https:\/\/[^)\s]+)\)/,
+            );
+            const mdUrl = mdImgMatch?.[1];
+            if (mdUrl && !/profile|avatar|icon|logo|emoji/i.test(mdUrl)) {
+              externalImageUrl = mdUrl;
+            }
+          }
         }
       }
     }
@@ -534,7 +730,12 @@ Przeanalizuj dostarczony materiał (tekst ze strony/Instagrama i/lub zdjęcie).
     });
 
     const imageUploadPromise = externalImageUrl
-      ? uploadImageToSupabaseStorage(supabaseUrl, supabaseServiceKey, externalImageUrl)
+      ? uploadImageToSupabaseStorage(
+          supabaseUrl,
+          supabaseServiceKey,
+          externalImageUrl,
+          sourcePlatform === "instagram" ? "https://www.instagram.com/" : url || undefined,
+        )
       : Promise.resolve<string | null>(null);
 
     let generatedText: string | null = null;
@@ -598,12 +799,33 @@ Przeanalizuj dostarczony materiał (tekst ze strony/Instagrama i/lub zdjęcie).
 
     const parsedRecipe = JSON.parse(generatedText) as Record<string, unknown>;
 
+    let finalImageUrl = permanentImageUrl;
+    if (!finalImageUrl && !rawImageBase64) {
+      const recipeTitle =
+        typeof parsedRecipe.title === "string" ? parsedRecipe.title.trim() : "";
+      const recipeDesc =
+        typeof parsedRecipe.description === "string" ? parsedRecipe.description.trim() : null;
+      const recipeCat =
+        typeof parsedRecipe.category === "string" ? parsedRecipe.category.trim() : null;
+
+      if (recipeTitle) {
+        finalImageUrl = await generateAndUploadFoodCover({
+          geminiApiKey,
+          supabaseUrl,
+          supabaseServiceKey,
+          title: recipeTitle,
+          description: recipeDesc,
+          category: recipeCat,
+        });
+      }
+    }
+
     return jsonResponse({
       recipe: {
         ...parsedRecipe,
         source_url: url || null,
         source_platform: sourcePlatform,
-        image_url: permanentImageUrl,
+        image_url: finalImageUrl,
       },
     });
   } catch (error: unknown) {

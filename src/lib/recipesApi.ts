@@ -189,7 +189,7 @@ function normalizeNutrition(raw: unknown): RecipeNutrition {
   return Object.keys(result).length > 0 ? result : null
 }
 
-const IMPORT_TIMEOUT_MS = 45_000
+const IMPORT_TIMEOUT_MS = 55_000
 
 interface InvokeEdgeFunctionOptions {
   signal?: AbortSignal
@@ -407,6 +407,43 @@ export async function discoverRecipeWithAi(payload: {
   return normalizeAiRecipeInsert(rawRecipe, {
     sourcePlatform: serverPlatform ?? (payload.useWebSearch ? 'web' : 'ai'),
   })
+}
+
+/**
+ * Generuje lub dobiera apetyczne zdjęcie okładki dla podanego dania przez Edge Function `ai-recipe-assistant`.
+ */
+export async function generateRecipeCoverImage(payload: {
+  title: string
+  description?: string | null
+  category?: string | null
+  signal?: AbortSignal
+}): Promise<string> {
+  const title = payload.title.trim()
+  if (!title) {
+    throw new Error('Podaj nazwę potrawy, aby wygenerować zdjęcie.')
+  }
+
+  const envelope = await invokeEdgeFunction<Record<string, unknown>>(
+    'ai-recipe-assistant',
+    {
+      mode: 'generate-image',
+      title,
+      description: payload.description?.trim() || undefined,
+      category: payload.category?.trim() || undefined,
+    },
+    {
+      signal: payload.signal,
+      timeoutMs: IMPORT_TIMEOUT_MS,
+      authErrorMsg: 'Brak uprawnień do asystenta AI. Zaloguj się ponownie i spróbuj jeszcze raz.',
+    },
+  )
+
+  const imageUrl = toSafeHttpUrl(toNullableTrimmedString(envelope.image_url))
+  if (!imageUrl) {
+    throw new Error('Nie udało się teraz utworzyć zdjęcia okładki dla tego przepisu.')
+  }
+
+  return imageUrl
 }
 
 export interface RecipeEditDiffItem {

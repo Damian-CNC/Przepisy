@@ -32,6 +32,7 @@ import { useVoiceRecognition } from '../../hooks/useVoiceRecognition'
 import { prepareImageForAi, uploadRecipeImage } from '../../lib/imageCompression'
 import {
   discoverRecipeWithAi,
+  generateRecipeCoverImage,
   groupIngredientsBySection,
   importRecipeWithAi,
   toSafeHttpUrl,
@@ -227,6 +228,7 @@ export function SmartImportModal({
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isReplacingPreviewCover, setIsReplacingPreviewCover] = useState(false)
+  const [isGeneratingPreviewCover, setIsGeneratingPreviewCover] = useState(false)
   const [previewDraft, setPreviewDraft] = useState<RecipeInsert | null>(null)
 
   // Zwalnianie ObjectURL dla podglądów lokalnych zdjęć
@@ -264,6 +266,7 @@ export function SmartImportModal({
     setIsAnalyzing(false)
     setIsSaving(false)
     setIsReplacingPreviewCover(false)
+    setIsGeneratingPreviewCover(false)
   }
 
   const handleClose = () => {
@@ -537,6 +540,29 @@ export function SmartImportModal({
     }
   }
 
+  const handleGeneratePreviewCover = async () => {
+    if (!previewDraft || isGeneratingPreviewCover || isReplacingPreviewCover) return
+    setIsGeneratingPreviewCover(true)
+    setErrorMessage(null)
+
+    try {
+      const imageUrl = await generateRecipeCoverImage({
+        title: previewDraft.title,
+        description: previewDraft.description,
+        category: previewDraft.category,
+      })
+      setPreviewDraft((prev) => (prev ? { ...prev, image_url: imageUrl } : prev))
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Nie udało się wygenerować zdjęcia okładki.',
+      )
+    } finally {
+      setIsGeneratingPreviewCover(false)
+    }
+  }
+
   const handleSavePreviewDraft = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!previewDraft || isSaving) return
@@ -742,7 +768,20 @@ export function SmartImportModal({
                 </div>
               )}
 
-              <div className="absolute right-3 bottom-3">
+              <div className="absolute right-3 bottom-3 flex flex-wrap items-center justify-end gap-2">
+                <GlassButton
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  isLoading={isGeneratingPreviewCover}
+                  disabled={isReplacingPreviewCover}
+                  loadingText="Generuję..."
+                  leftIcon={<Sparkles className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />}
+                  onClick={() => void handleGeneratePreviewCover()}
+                >
+                  {previewDraft.image_url ? 'Nowe zdjęcie AI' : 'Wygeneruj AI'}
+                </GlassButton>
+
                 <input
                   ref={previewCoverInputRef}
                   type="file"
@@ -759,6 +798,7 @@ export function SmartImportModal({
                   variant="secondary"
                   size="sm"
                   isLoading={isReplacingPreviewCover}
+                  disabled={isGeneratingPreviewCover}
                   loadingText="Wysyłanie..."
                   leftIcon={<ImagePlus className="size-4" aria-hidden="true" />}
                   onClick={() => previewCoverInputRef.current?.click()}
