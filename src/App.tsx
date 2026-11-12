@@ -30,7 +30,9 @@ import { useRecipes } from './hooks/useRecipes'
 import {
   consumePendingSharePayload,
   parseShareTargetParams,
+  peekPendingSharePayload,
   savePendingSharePayload,
+  type SharedImportPayload,
 } from './lib/shareTarget'
 import type { RecipeRow } from './lib/supabase'
 
@@ -84,6 +86,15 @@ export function App() {
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [cookingSession, setCookingSession] = useState<CookingSessionState | null>(null)
   const [activeShareImport, setActiveShareImport] = useState<ActiveShareImportState | null>(null)
+  const [pendingShareNotice, setPendingShareNotice] = useState<SharedImportPayload | null>(() => {
+    if (typeof window === 'undefined') return null
+    const fromUrl = parseShareTargetParams(window.location.search)
+    if (fromUrl) {
+      savePendingSharePayload(fromUrl)
+      return fromUrl
+    }
+    return peekPendingSharePayload()
+  })
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -104,6 +115,7 @@ export function App() {
     let consumed = false
     const timeoutId = window.setTimeout(() => {
       consumed = true
+      setPendingShareNotice(null)
       setActiveShareImport({
         url: payloadToOpen.url,
         rawText: payloadToOpen.rawText,
@@ -202,6 +214,7 @@ export function App() {
         ) : !user ? (
           <AuthScreen
             authError={authError}
+            pendingShare={pendingShareNotice}
             onSignInWithPassword={signInWithPassword}
             onSignInWithMagicLink={signInWithMagicLink}
             onClearError={clearAuthError}

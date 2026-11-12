@@ -10,10 +10,12 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { isSupabaseConfigured } from '../../lib/supabase'
+import type { SharedImportPayload } from '../../lib/shareTarget'
 import { GlassButton, GlassCard, GlassPill, cn } from '../ui'
 
 export interface AuthScreenProps {
   authError: string | null
+  pendingShare?: SharedImportPayload | null
   onSignInWithPassword: (email: string, password: string) => Promise<boolean>
   onSignInWithMagicLink: (email: string) => Promise<boolean>
   onClearError: () => void
@@ -36,6 +38,7 @@ const INPUT_BASE_CLASS = cn(
  */
 export function AuthScreen({
   authError,
+  pendingShare,
   onSignInWithPassword,
   onSignInWithMagicLink,
   onClearError,
@@ -125,6 +128,29 @@ export function AuthScreen({
               Zaloguj się, aby korzystać ze wspólnej bazy przepisów i trybu gotowania krok po kroku.
             </p>
           </header>
+
+          {pendingShare && (
+            <div
+              role="status"
+              className="flex items-start gap-2.5 rounded-2xl border border-emerald-600/30 bg-emerald-500/12 p-3.5 text-sm text-emerald-950 dark:border-emerald-400/30 dark:bg-emerald-500/15 dark:text-emerald-100"
+            >
+              <Sparkles className="mt-0.5 size-4 shrink-0 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
+              <div className="min-w-0 space-y-1">
+                <p className="font-semibold">
+                  Przepis czeka na import!
+                </p>
+                <p className="text-xs leading-relaxed opacity-90">
+                  Zaloguj się raz w tej przeglądarce (Safari na iOS przechowuje sesję osobno od
+                  ikony na ekranie głównym), a AI od razu go przetłumaczy.
+                </p>
+                {(pendingShare.url || pendingShare.rawText) && (
+                  <p className="truncate font-mono text-xs opacity-80">
+                    {pendingShare.url || pendingShare.rawText}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Przełącznik trybu logowania */}
           <div

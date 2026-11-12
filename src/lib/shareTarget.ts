@@ -4,11 +4,17 @@ export interface SharedImportPayload {
   title: string
 }
 
+interface StoredPendingShare {
+  payload: SharedImportPayload
+  savedAt: number
+}
+
 const PENDING_SHARE_STORAGE_KEY = 'nasze-przepisy:pending-share'
+const PENDING_SHARE_TTL_MS = 15 * 60 * 1000
 const URL_IN_TEXT_REGEX = /(https?:\/\/[^\s]+)/g
 const TRAILING_PUNCTUATION_REGEX = /[.,)!?'">]+$/
 
-let inMemoryPendingShare: SharedImportPayload | null = null
+let inMemoryPendingShare: StoredPendingShare | null = null
 
 function extractValidHttpUrl(source: string): { url: string; rawMatch: string } | null {
   if (!source.trim()) return null
@@ -30,6 +36,16 @@ function extractValidHttpUrl(source: string): { url: string; rawMatch: string } 
   }
 
   return null
+}
+
+function normalizePayload(raw: unknown): SharedImportPayload | null {
+  if (!raw || typeof raw !== 'object') return null
+  const record = raw as Record<string, unknown>
+  const url = typeof record.url === 'string' ? record.url.trim() : ''
+  const rawText = typeof record.rawText === 'string' ? record.rawText.trim() : ''
+  const title = typeof record.title === 'string' ? record.title.trim() : ''
+  if (!url && !rawText && !title) return null
+  return { url, rawText, title }
 }
 
 /**
@@ -90,43 +106,72 @@ export function parseShareTargetParams(search: string): SharedImportPayload | nu
 }
 
 /**
- * Zapisuje udostępniony link lub tekst w `sessionStorage`, aby przetrwał logowanie.
+ * Zapisuje udostępniony link lub tekst w `localStorage` (ważny 15 minut),
+ * aby przetrwał logowanie w Safari lub przekierowanie z Magic Linka.
  */
 export function savePendingSharePayload(payload: SharedImportPayload): void {
-  inMemoryPendingShare = payload
+  const entry: StoredPendingShare = { payload, savedAt: Date.now() }
+  inMemoryPendingShare = entry
   if (typeof window === 'undefined') return
   try {
-    window.sessionStorage.setItem(PENDING_SHARE_STORAGE_KEY, JSON.stringify(payload))
+    window.localStorage.setItem(PENDING_SHARE_STORAGE_KEY, JSON.stringify(entry))
   } catch {
     // Ignorujemy błąd zapisu w trybie prywatnym lub przy blokadzie storage
   }
 }
 
-/**
- * Odczytuje i jednorazowo usuwa zapisany ładunek udostępniania z `sessionStorage`.
- */
-export function consumePendingSharePayload(): SharedImportPayload | null {
-  const memoryFallback = inMemoryPendingShare
-  inMemoryPendingShare = null
+function readStoredEntry(): StoredPendingShare | null {
+  if (typeof window === 'undefined') return inMemoryPendingShare
 
-  if (typeof window === 'undefined') return memoryFallback
   try {
-    const raw = window.sessionStorage.getItem(PENDING_SHARE_STORAGE_KEY)
-    if (!raw) return memoryFallback
-    window.sessionStorage.removeItem(PENDING_SHARE_STORAGE_KEY)
+    const raw = window.localStorage.getItem(PENDING_SHARE_STORAGE_KEY)
+    if (!raw) return inMemoryPendingShare
 
     const parsed: unknown = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return memoryFallback
+    if (!parsed || typeof parsed !== 'object') return inMemoryPendingShare
 
     const record = parsed as Record<string, unknown>
-    const url = typeof record.url === 'string' ? record.url.trim() : ''
-    const rawText = typeof record.rawText === 'string' ? record.rawText.trim() : ''
-    const title = typeof record.title === 'string' ? record.title.trim() : ''
+    const savedAt = typeof record.savedAt === 'number' ? record.savedAt : Date.now()
+    if (Date.now() - savedAt > PENDING_SHARE_TTL_MS) {
+      window.localStorage.removeItem(PENDING_SHARE_STORAGE_KEY)
+      return null
+    }
 
-    if (!url && !rawText && !title) return memoryFallback
+    const payload = normalizePayload(record.payload ?? parsed)
+    if (!payload) return inMemoryPendingShare
 
-    return { url, rawText, title }
+    return { payload, savedAt }
   } catch {
-    return memoryFallback
+    return inMemoryPendingShare
   }
+}
+
+/**
+ * Sprawdza bez usuwania, czy w pamięci oczekuje przepis do automatycznego importu po zalogowaniu.
+ */
+export function peekPendingSharePayload(): SharedImportPayload | null {
+  const entry = readStoredEntry()
+  if (!entry) return null
+  if (Date.now() - entry.savedAt > PENDING_SHARE_TTL_MS) return null
+  return entry.payload
+}
+
+/**
+ * Odczytuje i jednorazowo usuwa zapisany ładunek udostępniania.
+ */
+export function consumePendingSharePayload(): SharedImportPayload | null {
+  const entry = readStoredEntry()
+  inMemoryPendingShare = null
+
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.removeItem(PENDING_SHARE_STORAGE_KEY)
+    } catch {
+      // Ignorujemy błąd czyszczenia storage
+    }
+  }
+
+  if (!entry) return null
+  if (Date.now() - entry.savedAt > PENDING_SHARE_TTL_MS) return null
+  return entry.payload
 }
