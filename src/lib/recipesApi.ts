@@ -113,6 +113,72 @@ function normalizeTags(raw: unknown): string[] {
   return result
 }
 
+function estimateLiquidDensity(name: string): number {
+  const lower = name.toLowerCase()
+  if (/(olej|oliw|tłuszcz|masło klarowane)/i.test(lower)) return 0.92
+  if (/(miód|miodu|syrop|melas)/i.test(lower)) return 1.4
+  if (/(śmietan|mleko|mleka|kefir|maślank|jogurt)/i.test(lower)) return 1.03
+  return 1
+}
+
+function estimateCupGrams(name: string): number {
+  const lower = name.toLowerCase()
+  if (/(cukier puder|cukru pudru)/i.test(lower)) return 160
+  if (/(cukier|cukru|ryż|kasza|kaszy|sól)/i.test(lower)) return 200
+  if (/(mąka|mąki|skrobia|kakao)/i.test(lower)) return 135
+  if (/(płatk|orzech|wiórk|bułka tarta|bułki tartej|migdał)/i.test(lower)) return 110
+  if (/(masło|masła)/i.test(lower)) return 225
+  if (/(olej|oliw)/i.test(lower)) return 220
+  if (/(miód|miodu|syrop)/i.test(lower)) return 340
+  if (/(woda|wody|mleko|mleka|śmietan|bulion|wywar|sok|wino|kefir)/i.test(lower)) return 250
+  return 200
+}
+
+/**
+ * Konwertuje jednostki objętościowe (`ml`, `l`, `szklanka`, `cup`, `fl oz`, `oz`, `lb`) na gramy (`g`)
+ * pod wagę kuchenną, pozostawiając małe jednostki kuchenne (`łyżeczka`, `szczypta`, `szt.`).
+ */
+function convertMeasurementToWeight(
+  name: string,
+  amount: number,
+  rawUnit: string,
+): { amount: number; unit: string } {
+  const unit = rawUnit.trim()
+  if (!unit || !Number.isFinite(amount) || amount <= 0) {
+    return { amount, unit }
+  }
+
+  const normalized = unit.toLowerCase().replace(/\.+$/, '').trim()
+  const roundGrams = (value: number) =>
+    value < 5 ? Math.round(value * 10) / 10 : Math.round(value)
+
+  if (normalized === 'ml' || normalized === 'mililitr' || normalized === 'mililitry' || normalized === 'mililitrów') {
+    return { amount: roundGrams(amount * estimateLiquidDensity(name)), unit: 'g' }
+  }
+
+  if (normalized === 'l' || normalized === 'litr' || normalized === 'litry' || normalized === 'litrów') {
+    return { amount: roundGrams(amount * 1000 * estimateLiquidDensity(name)), unit: 'g' }
+  }
+
+  if (/^(szkl|szklank[aie]|szklanek|cup|cups)$/.test(normalized)) {
+    return { amount: roundGrams(amount * estimateCupGrams(name)), unit: 'g' }
+  }
+
+  if (normalized === 'fl oz' || normalized === 'fl. oz') {
+    return { amount: roundGrams(amount * 29.57 * estimateLiquidDensity(name)), unit: 'g' }
+  }
+
+  if (normalized === 'oz' || normalized === 'uncja' || normalized === 'uncje' || normalized === 'uncji') {
+    return { amount: roundGrams(amount * 28.35), unit: 'g' }
+  }
+
+  if (normalized === 'lb' || normalized === 'lbs' || normalized === 'funt' || normalized === 'funty') {
+    return { amount: roundGrams(amount * 453.6), unit: 'g' }
+  }
+
+  return { amount, unit }
+}
+
 function normalizeIngredients(raw: unknown): RecipeIngredient[] {
   if (!Array.isArray(raw)) return []
   const result: RecipeIngredient[] = []
@@ -121,8 +187,9 @@ function normalizeIngredients(raw: unknown): RecipeIngredient[] {
     const record = item as Record<string, unknown>
     const name = toNullableTrimmedString(record.name)
     if (!name) continue
-    const amount = Math.max(0, toFiniteNumber(record.amount, 0))
-    const unit = typeof record.unit === 'string' ? record.unit.trim() : ''
+    const rawAmount = Math.max(0, toFiniteNumber(record.amount, 0))
+    const rawUnit = typeof record.unit === 'string' ? record.unit.trim() : ''
+    const { amount, unit } = convertMeasurementToWeight(name, rawAmount, rawUnit)
     const category = toNullableTrimmedString(record.category)
 
     result.push(category ? { name, amount, unit, category } : { name, amount, unit })
@@ -138,8 +205,9 @@ function normalizeStepIngredients(raw: unknown): StepIngredient[] {
     const record = item as Record<string, unknown>
     const name = toNullableTrimmedString(record.name)
     if (!name) continue
-    const amount = Math.max(0, toFiniteNumber(record.amount, 0))
-    const unit = typeof record.unit === 'string' ? record.unit.trim() : ''
+    const rawAmount = Math.max(0, toFiniteNumber(record.amount, 0))
+    const rawUnit = typeof record.unit === 'string' ? record.unit.trim() : ''
+    const { amount, unit } = convertMeasurementToWeight(name, rawAmount, rawUnit)
     result.push({ name, amount, unit })
   }
   return result
@@ -410,17 +478,18 @@ export async function discoverRecipeWithAi(payload: {
 }
 
 /**
- * Generuje lub dobiera apetyczne zdjęcie okładki dla podanego dania przez Edge Function `ai-recipe-assistant`.
+ * Dobiera z sieci (a w ostateczności lub przy `forceGenerate: true` generuje przez AI) zdjęcie okładki dania.
  */
 export async function generateRecipeCoverImage(payload: {
   title: string
   description?: string | null
   category?: string | null
+  forceGenerate?: boolean
   signal?: AbortSignal
 }): Promise<string> {
   const title = payload.title.trim()
   if (!title) {
-    throw new Error('Podaj nazwę potrawy, aby wygenerować zdjęcie.')
+    throw new Error('Podaj nazwę potrawy, aby dobrać zdjęcie.')
   }
 
   const envelope = await invokeEdgeFunction<Record<string, unknown>>(
@@ -430,6 +499,7 @@ export async function generateRecipeCoverImage(payload: {
       title,
       description: payload.description?.trim() || undefined,
       category: payload.category?.trim() || undefined,
+      forceGenerate: Boolean(payload.forceGenerate),
     },
     {
       signal: payload.signal,

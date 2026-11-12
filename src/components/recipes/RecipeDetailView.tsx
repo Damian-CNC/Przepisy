@@ -7,6 +7,7 @@ import {
   Clock,
   ExternalLink,
   Flame,
+  Globe,
   Heart,
   ImagePlus,
   Lightbulb,
@@ -59,7 +60,8 @@ export function RecipeDetailView({
   const baseServings = recipe.servings && recipe.servings > 0 ? recipe.servings : 2
   const [targetServings, setTargetServings] = useState<number>(baseServings)
   const [isUpdatingPhoto, setIsUpdatingPhoto] = useState(false)
-  const [isGeneratingPhoto, setIsGeneratingPhoto] = useState(false)
+  const [photoAction, setPhotoAction] = useState<'search' | 'generate' | null>(null)
+  const [isPhotoOptionsOpen, setIsPhotoOptionsOpen] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -107,25 +109,27 @@ export function RecipeDetailView({
     }
   }
 
-  const handleGenerateAiPhoto = async () => {
-    if (isGeneratingPhoto || isUpdatingPhoto) return
+  const handleResolveCoverPhoto = async (forceGenerate: boolean) => {
+    if (photoAction !== null || isUpdatingPhoto) return
+    setIsPhotoOptionsOpen(false)
     setPhotoError(null)
-    setIsGeneratingPhoto(true)
+    setPhotoAction(forceGenerate ? 'generate' : 'search')
     try {
       const imageUrl = await generateRecipeCoverImage({
         title: recipe.title,
         description: recipe.description,
         category: recipe.category,
+        forceGenerate,
       })
       await onUpdateRecipe(recipe.id, { image_url: imageUrl })
     } catch (err) {
       setPhotoError(
         err instanceof Error && err.message
           ? err.message
-          : 'Nie udało się wygenerować zdjęcia AI dla tego przepisu.',
+          : 'Nie udało się dobrać ani wygenerować zdjęcia dla tego przepisu.',
       )
     } finally {
-      setIsGeneratingPhoto(false)
+      setPhotoAction(null)
     }
   }
 
@@ -197,19 +201,34 @@ export function RecipeDetailView({
         />
 
         {!recipe.image_url && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center pt-10">
-            <div className="pointer-events-auto">
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4 pt-10">
+            <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2.5">
               <GlassButton
                 type="button"
                 variant="secondary"
                 size="md"
-                isLoading={isGeneratingPhoto}
-                loadingText="Tworzę zdjęcie..."
-                leftIcon={<Sparkles className="size-4 text-amber-300" aria-hidden="true" />}
-                onClick={() => void handleGenerateAiPhoto()}
+                isLoading={photoAction === 'search'}
+                disabled={photoAction === 'generate' || isUpdatingPhoto}
+                loadingText="Szukam zdjęcia..."
+                leftIcon={<Globe className="size-4 text-emerald-300" aria-hidden="true" />}
+                onClick={() => void handleResolveCoverPhoto(false)}
                 className="border-white/35 bg-zinc-950/65 text-white hover:bg-zinc-950/80 dark:border-white/25 dark:bg-zinc-950/75 dark:text-white"
               >
-                Wygeneruj zdjęcie AI
+                Znajdź z sieci
+              </GlassButton>
+
+              <GlassButton
+                type="button"
+                variant="secondary"
+                size="md"
+                isLoading={photoAction === 'generate'}
+                disabled={photoAction === 'search' || isUpdatingPhoto}
+                loadingText="Generuję..."
+                leftIcon={<Sparkles className="size-4 text-amber-300" aria-hidden="true" />}
+                onClick={() => void handleResolveCoverPhoto(true)}
+                className="border-white/35 bg-zinc-950/65 text-white hover:bg-zinc-950/80 dark:border-white/25 dark:bg-zinc-950/75 dark:text-white"
+              >
+                Generuj zdjęcie
               </GlassButton>
             </div>
           </div>
@@ -243,10 +262,10 @@ export function RecipeDetailView({
             <GlassButton
               variant="secondary"
               size="md"
-              isLoading={isUpdatingPhoto}
-              loadingText="Zapis..."
+              isLoading={isUpdatingPhoto || photoAction !== null}
+              loadingText={photoAction === 'generate' ? 'Generuję...' : photoAction === 'search' ? 'Szukam...' : 'Zapis...'}
               leftIcon={<ImagePlus className="size-4" aria-hidden="true" />}
-              onClick={() => photoInputRef.current?.click()}
+              onClick={() => setIsPhotoOptionsOpen(true)}
               className="border-white/30 bg-zinc-950/65 text-white hover:bg-zinc-950/80 dark:border-white/25 dark:bg-zinc-950/70 dark:text-white"
             >
               <span className="hidden sm:inline">
@@ -622,6 +641,53 @@ export function RecipeDetailView({
           </GlassButton>
         </div>
       </div>
+
+      {/* Modal wyboru źródła zdjęcia potrawy */}
+      <GlassModal
+        isOpen={isPhotoOptionsOpen}
+        onClose={() => setIsPhotoOptionsOpen(false)}
+        title="Zdjęcie potrawy"
+        subtitle={`Wybierz sposób dodania okładki dla „${recipe.title}”.`}
+        size="sm"
+      >
+        <div className="flex flex-col gap-3">
+          <GlassButton
+            type="button"
+            variant="secondary"
+            size="lg"
+            fullWidth
+            leftIcon={<ImagePlus className="size-5" aria-hidden="true" />}
+            onClick={() => {
+              setIsPhotoOptionsOpen(false)
+              photoInputRef.current?.click()
+            }}
+          >
+            Wybierz z galerii lub aparatu
+          </GlassButton>
+
+          <GlassButton
+            type="button"
+            variant="secondary"
+            size="lg"
+            fullWidth
+            leftIcon={<Globe className="size-5 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />}
+            onClick={() => void handleResolveCoverPhoto(false)}
+          >
+            Znajdź zdjęcie w internecie
+          </GlassButton>
+
+          <GlassButton
+            type="button"
+            variant="primary"
+            size="lg"
+            fullWidth
+            leftIcon={<Sparkles className="size-5" aria-hidden="true" />}
+            onClick={() => void handleResolveCoverPhoto(true)}
+          >
+            Generuj zdjęcie AI
+          </GlassButton>
+        </div>
+      </GlassModal>
 
       {/* Modal potwierdzenia usunięcia przepisu */}
       <GlassModal

@@ -13,6 +13,7 @@ interface AiAssistantRequest {
   title?: unknown;
   description?: unknown;
   category?: unknown;
+  forceGenerate?: unknown;
 }
 
 interface GeminiCandidatePart {
@@ -80,20 +81,25 @@ const RECIPE_RESPONSE_SCHEMA = {
     },
     ingredients: {
       type: "ARRAY",
-      description: "Pełna lista wszystkich składników",
+      description:
+        "Pełna lista wszystkich składników, OBOWIĄZKOWO podzielona na półwyroby/sekcje w polu category",
       items: {
         type: "OBJECT",
         properties: {
           name: { type: "STRING" },
           amount: { type: "NUMBER" },
-          unit: { type: "STRING" },
+          unit: {
+            type: "STRING",
+            description:
+              "Jednostka pod wagę kuchenną: preferuj 'g' (przelicz ml, l, szklanki, cups, oz na gramy). Dozwolone też 'łyżeczka', 'łyżeczki', 'szczypta', 'szt.', 'ząbek', 'wg uznania'. ZAKAZ 'ml', 'l', 'szklanka', 'cup'.",
+          },
           category: {
             type: "STRING",
             description:
-              "Nazwa sekcji z przepisu (np. Zaparka, Ciasto, Farsz, Ciasto na pierogi, Sos, Polewa). Zostaw puste, jeśli przepis nie dzieli składników na sekcje.",
+              "OBOWIĄZKOWA nazwa półwyrobu/sekcji (np. Zaparka, Ciasto, Farsz, Ciasto na pierogi, Sos, Polewa, Wykończenie i pieczenie). Nigdy nie zostawiaj pustego pola.",
           },
         },
-        required: ["name", "amount", "unit"],
+        required: ["name", "amount", "unit", "category"],
       },
     },
     steps: {
@@ -105,17 +111,21 @@ const RECIPE_RESPONSE_SCHEMA = {
           step_number: { type: "INTEGER" },
           instruction: {
             type: "STRING",
-            description: "Jasna instrukcja co zrobić w tym kroku",
+            description: "Jasna instrukcja co zrobić w tym kroku (płyny i sypkie podawaj w gramach 'g')",
           },
           step_ingredients: {
             type: "ARRAY",
-            description: "Składniki dodawane konkretnie w tym kroku wraz z ilością",
+            description: "Składniki dodawane konkretnie w tym kroku wraz z ilością w gramach",
             items: {
               type: "OBJECT",
               properties: {
                 name: { type: "STRING" },
                 amount: { type: "NUMBER" },
-                unit: { type: "STRING" },
+                unit: {
+                  type: "STRING",
+                  description:
+                    "Preferuj 'g' (ZAKAZ 'ml', 'l', 'szklanka', 'cup'). Dozwolone też małe miary jak 'łyżeczka', 'szczypta', 'szt.'.",
+                },
               },
               required: ["name", "amount", "unit"],
             },
@@ -239,16 +249,98 @@ function decodeBase64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
+function isSafeHttpUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function readPngDimensions(bytes: Uint8Array): { width: number; height: number } | null {
+  if (
+    bytes.byteLength < 24 ||
+    bytes[0] !== 0x89 ||
+    bytes[1] !== 0x50 ||
+    bytes[2] !== 0x4e ||
+    bytes[3] !== 0x47
+  ) {
+    return null;
+  }
+  const width =
+    ((bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19]) >>> 0;
+  const height =
+    ((bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23]) >>> 0;
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
+function readJpegDimensions(bytes: Uint8Array): { width: number; height: number } | null {
+  if (bytes.byteLength < 12 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
+    return null;
+  }
+  let offset = 2;
+  while (offset + 8 < bytes.byteLength) {
+    if (bytes[offset] !== 0xff) {
+      offset += 1;
+      continue;
+    }
+    const marker = bytes[offset + 1];
+    if (
+      marker >= 0xc0 &&
+      marker <= 0xcf &&
+      marker !== 0xc4 &&
+      marker !== 0xc8 &&
+      marker !== 0xcc
+    ) {
+      const height = (bytes[offset + 5] << 8) | bytes[offset + 6];
+      const width = (bytes[offset + 7] << 8) | bytes[offset + 8];
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+    if (offset + 3 >= bytes.byteLength) break;
+    const segmentLength = (bytes[offset + 2] << 8) | bytes[offset + 3];
+    if (segmentLength < 2) break;
+    offset += 2 + segmentLength;
+  }
+  return null;
+}
+
+function isHighQualityRasterImage(rawBytes: ArrayBuffer | Uint8Array, contentType: string): boolean {
+  const normalizedType = contentType.split(";")[0].trim().toLowerCase();
+  if (
+    !normalizedType.startsWith("image/") ||
+    normalizedType.includes("svg") ||
+    normalizedType.includes("icon") ||
+    normalizedType.includes("gif")
+  ) {
+    return false;
+  }
+
+  const bytes = rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(rawBytes);
+  if (bytes.byteLength < 20_000 || bytes.byteLength > 6 * 1024 * 1024) {
+    return false;
+  }
+
+  const dims = readPngDimensions(bytes) ?? readJpegDimensions(bytes);
+  if (dims) {
+    return dims.width >= 400 && dims.height >= 300;
+  }
+
+  return bytes.byteLength >= 30_000;
+}
+
 async function uploadBytesToSupabaseStorage(
   supabaseUrl: string,
   supabaseServiceKey: string,
   bytes: ArrayBuffer | Uint8Array,
   contentType: string,
   folder = "generated",
+  enforceQuality = false,
 ): Promise<string | null> {
   try {
     const normalizedType = contentType.split(";")[0].trim().toLowerCase();
-    if (!normalizedType.startsWith("image/")) return null;
+    if (!normalizedType.startsWith("image/") || normalizedType.includes("svg")) return null;
+    if (enforceQuality && !isHighQualityRasterImage(bytes, normalizedType)) return null;
     if (bytes.byteLength === 0 || bytes.byteLength > 6 * 1024 * 1024) return null;
 
     let fileExt = "jpg";
@@ -349,6 +441,143 @@ async function tryGenerateFoodCoverWithGemini(
   return null;
 }
 
+async function downloadAndUploadQualityImage(
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  imageUrl: string,
+  referer?: string,
+  folder = "web-search",
+): Promise<string | null> {
+  if (!isSafeHttpUrl(imageUrl)) return null;
+  if (/favicon|sprite|logo|avatar|profile_pic|emoji|blank\.png/i.test(imageUrl)) {
+    return null;
+  }
+  try {
+    const imgRes = await fetch(imageUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+        Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        ...(referer ? { Referer: referer } : {}),
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(6500),
+    });
+    if (!imgRes.ok) return null;
+    const contentType = imgRes.headers.get("content-type") || "image/jpeg";
+    const bytes = await imgRes.arrayBuffer();
+    return await uploadBytesToSupabaseStorage(
+      supabaseUrl,
+      supabaseServiceKey,
+      bytes,
+      contentType,
+      folder,
+      true,
+    );
+  } catch {
+    return null;
+  }
+}
+
+function extractImageFromHtml(html: string): string | null {
+  const jsonLdRegex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = jsonLdRegex.exec(html)) !== null) {
+    const imageMatch = match[1].match(/"image"\s*:\s*(?:"(https?:\/\/[^"]+)"|\[\s*"(https?:\/\/[^"]+)"|[^}]*"url"\s*:\s*"(https?:\/\/[^"]+)")/i);
+    const url = imageMatch?.[1] || imageMatch?.[2] || imageMatch?.[3];
+    if (url) return url;
+  }
+
+  const ogMatch =
+    html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i) ||
+    html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*property=["']og:image["']/i) ||
+    html.match(/<meta[^>]*name=["']twitter:image["'][^>]*content=["']([^"']+)["']/i);
+  return ogMatch?.[1]?.replace(/&amp;/g, "&").trim() || null;
+}
+
+async function searchWebRecipePhotosViaGrounding(
+  geminiApiKey: string,
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  title: string,
+): Promise<string | null> {
+  const cleanTitle = title.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleanTitle) return null;
+
+  try {
+    const res = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": geminiApiKey,
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text: `Znajdź najpopularniejsze sprawdzone przepisy ze zdjęciem na potrawę: "${cleanTitle}".`,
+                },
+              ],
+            },
+          ],
+          tools: [{ google_search: {} }],
+        }),
+        signal: AbortSignal.timeout(9000),
+      },
+    );
+    if (!res.ok) return null;
+
+    const json = (await res.json()) as GeminiApiResponse;
+    const pageUrls = Array.from(
+      new Set(
+        (json.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [])
+          .map((chunk) => chunk.web?.uri?.trim())
+          .filter((u): u is string => Boolean(u && isSafeHttpUrl(u))),
+      ),
+    ).slice(0, 4);
+
+    if (pageUrls.length === 0) return null;
+
+    const htmlResults = await Promise.allSettled(
+      pageUrls.map((pageUrl) =>
+        fetch(pageUrl, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+            Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+          },
+          redirect: "follow",
+          signal: AbortSignal.timeout(4500),
+        }).then(async (r) => ({
+          pageUrl: r.url || pageUrl,
+          html: r.ok ? (await r.text()).slice(0, 220000) : "",
+        })),
+      ),
+    );
+
+    for (const outcome of htmlResults) {
+      if (outcome.status !== "fulfilled" || !outcome.value.html) continue;
+      const candidateImg = extractImageFromHtml(outcome.value.html);
+      if (!candidateImg) continue;
+      const uploaded = await downloadAndUploadQualityImage(
+        supabaseUrl,
+        supabaseServiceKey,
+        candidateImg,
+        outcome.value.pageUrl,
+        "web-search",
+      );
+      if (uploaded) return uploaded;
+    }
+  } catch (err) {
+    console.warn("Wyszukiwanie zdjęcia potrawy w sieci nie powiodło się:", err);
+  }
+  return null;
+}
+
 async function tryWikipediaFoodThumbnail(
   supabaseUrl: string,
   supabaseServiceKey: string,
@@ -361,7 +590,7 @@ async function tryWikipediaFoodThumbnail(
     try {
       const searchUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
         cleanTitle,
-      )}&gsrlimit=3&prop=pageimages&pithumbsize=1000&format=json&origin=*`;
+      )}&gsrlimit=3&prop=pageimages&pithumbsize=1200&format=json&origin=*`;
       const res = await fetch(searchUrl, { signal: AbortSignal.timeout(5000) });
       if (!res.ok) continue;
       const data = (await res.json()) as {
@@ -373,23 +602,12 @@ async function tryWikipediaFoodThumbnail(
       for (const page of pages) {
         const src = page.thumbnail?.source;
         if (src && src.startsWith("https://") && !/\.svg(\?|$)/i.test(src)) {
-          const imgRes = await fetch(src, {
-            headers: {
-              "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
-              Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-            },
-            signal: AbortSignal.timeout(6000),
-          });
-          if (!imgRes.ok) continue;
-          const contentType = imgRes.headers.get("content-type") || "image/jpeg";
-          const bytes = await imgRes.arrayBuffer();
-          const uploaded = await uploadBytesToSupabaseStorage(
+          const uploaded = await downloadAndUploadQualityImage(
             supabaseUrl,
             supabaseServiceKey,
-            bytes,
-            contentType,
-            "generated",
+            src,
+            undefined,
+            "web-search",
           );
           if (uploaded) return uploaded;
         }
@@ -408,23 +626,36 @@ async function generateAndUploadFoodCover(params: {
   title: string;
   description?: string | null;
   category?: string | null;
+  forceGenerate?: boolean;
 }): Promise<string | null> {
   if (!params.supabaseUrl || !params.supabaseServiceKey) return null;
 
-  const aiCover = await tryGenerateFoodCoverWithGemini(
+  // Gdy użytkownik nie wymusił generowania AI ręcznie — najpierw szukamy zdjęcia w internecie
+  if (!params.forceGenerate) {
+    const webPhoto = await searchWebRecipePhotosViaGrounding(
+      params.geminiApiKey,
+      params.supabaseUrl,
+      params.supabaseServiceKey,
+      params.title,
+    );
+    if (webPhoto) return webPhoto;
+
+    const wikiPhoto = await tryWikipediaFoodThumbnail(
+      params.supabaseUrl,
+      params.supabaseServiceKey,
+      params.title,
+    );
+    if (wikiPhoto) return wikiPhoto;
+  }
+
+  // W ostateczności (lub po kliknięciu ręcznego „Generuj zdjęcie”) — generujemy obraz Gemini
+  return await tryGenerateFoodCoverWithGemini(
     params.geminiApiKey,
     params.supabaseUrl,
     params.supabaseServiceKey,
     params.title,
     params.description,
     params.category,
-  );
-  if (aiCover) return aiCover;
-
-  return await tryWikipediaFoodThumbnail(
-    params.supabaseUrl,
-    params.supabaseServiceKey,
-    params.title,
   );
 }
 
@@ -476,6 +707,7 @@ Deno.serve(async (req: Request) => {
       const description =
         typeof payload.description === "string" ? payload.description.trim() : null;
       const category = typeof payload.category === "string" ? payload.category.trim() : null;
+      const forceGenerate = payload.forceGenerate === true;
 
       const imageUrl = await generateAndUploadFoodCover({
         geminiApiKey,
@@ -484,6 +716,7 @@ Deno.serve(async (req: Request) => {
         title,
         description,
         category,
+        forceGenerate,
       });
 
       if (!imageUrl) {
@@ -557,11 +790,11 @@ ${
 
 ZASADY OBOWIĄZKOWE:
 1. Całość tekstu (tytuł, opis, składniki, kroki, wskazówki, tagi) musi być w języku polskim.
-2. Stosuj polskie jednostki metryczne (g, ml, szt., łyżki, łyżeczki, °C).
+2. KONWERSJA NA WAGĘ KUCHENNĄ (GRAMY): Użytkownik gotuje na wadze cyfrowej — ZAWSZE przeliczaj mililitry (ml), litry (l), szklanki, kubki (cups), uncje (oz, fl oz) na GRAMY ("g") z uwzględnieniem gęstości (np. 110 ml mleka -> 113 g, 100 ml oleju -> 92 g, 1 szklanka mąki -> 135 g). ZAKAZ używania jednostek "ml", "l", "szklanka", "cup" w składnikach i w krokach! Małe miary przypraw ("łyżeczka", "łyżeczki", "szczypta", "szt.", "ząbek", "wg uznania") mogą zostać.
 3. Jeśli składnik nie ma dokładnej ilości (np. "sól do smaku", "olej do smażenia"), ustaw amount na 0, a w unit wpisz np. "wg uznania" lub "do smażenia" — NIGDY nie wymyślaj sztucznego "1 szt.".
-4. Jeśli przepis naturalnie dzieli składniki na sekcje (np. "Zaparka", "Ciasto", "Farsz", "Sos", "Polewa", "Marynata"), wpisz nazwę sekcji w pole "category" każdego składnika tej sekcji i zachowaj czystą nazwę w "name". Jeśli przepis nie wymaga sekcji, zostaw "category" puste.
+4. KRYTYCZNE — OBOWIĄZKOWY PODZIAŁ NA PÓŁWYROBY (SEKCJE): Każdy składnik w "ingredients" MUSI mieć wypełnione pole "category" nazwą półwyrobu/etapu (NIGDY puste!). Nawet jeśli źródłowy przepis ma jedną płaską listę, podziel składniki według kroków przygotowania (np. "Zaparka", "Ciasto główne", "Farsz", "Sos", "Posmarowanie i wykończenie", "Baza", "Dodatki"). Jeśli składnik pojawia się w dwóch etapach (np. mleko lub mąka w Zaparce i w Cieście), wypisz go osobno w obu sekcjach.
 5. Podziel przygotowanie na logiczne kroki w stylu Thermomix, numerując "step_number" kolejno od 1 (1, 2, 3...).
-6. W każdym kroku w "step_ingredients" wypisz DOKŁADNIE te składniki i ich ilości, które są używane/dodawane w tym kroku (spójne z główną listą "ingredients").
+6. W każdym kroku w "step_ingredients" wypisz DOKŁADNIE te składniki i ich ilości (w gramach!), które są używane/dodawane w tym kroku.
 7. W "timer_seconds" podaj czas odliczania w sekundach dla kroków wymagających gotowania, pieczenia, smażenia lub odstawienia (np. 10 min = 600). Jeśli brak czasu, wpisz 0.
 
 ZAPYTANIE UŻYTKOWNIKA:
@@ -636,7 +869,7 @@ ZASADY OBOWIĄZKOWE:
 3. Wprowadź żądaną modyfikację precyzyjnie (np. zmiana liczby porcji z proporcjonalnym przeliczeniem składników, zamiana składnika, dodanie/usunięcie kroku, zmiana czasu lub temperatury).
 4. Poprawnie przenumeruj wszystkie kroki w "step_number" kolejno od 1 (1, 2, 3...).
 5. Utrzymuj pełną spójność między główną listą "ingredients" (włącznie z polem "category" dla sekcji, jeśli występują) a cząstkowymi listami "step_ingredients" oraz "timer_seconds" w każdym kroku.
-6. Stosuj polskie jednostki metryczne (g, ml, szt., łyżki, łyżeczki, °C) oraz amount = 0 dla ilości "wg uznania".
+6. KONWERSJA NA WAGĘ (GRAMY): Używaj gramów ("g") zamiast mililitrów ("ml"), litrów ("l") i szklanek ("szklanka"/"cup"), również w krokach; małe miary typu "łyżeczka", "szczypta", "szt." i amount = 0 ("wg uznania") mogą zostać. Zachowaj podział wszystkich składników na półwyroby w polu "category".
 
 AKTUALNY PRZEPIS (JSON):
 ${JSON.stringify(currentRecipe)}

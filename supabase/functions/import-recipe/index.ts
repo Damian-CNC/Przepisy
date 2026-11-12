@@ -197,20 +197,25 @@ const RECIPE_RESPONSE_SCHEMA = {
     },
     ingredients: {
       type: "ARRAY",
-      description: "Pełna lista wszystkich składników",
+      description:
+        "Pełna lista wszystkich składników, OBOWIĄZKOWO podzielona na półwyroby/sekcje w polu category",
       items: {
         type: "OBJECT",
         properties: {
           name: { type: "STRING" },
           amount: { type: "NUMBER" },
-          unit: { type: "STRING" },
+          unit: {
+            type: "STRING",
+            description:
+              "Jednostka pod wagę kuchenną: preferuj 'g' (przelicz ml, l, szklanki, cups, oz na gramy). Dozwolone też 'łyżeczka', 'łyżeczki', 'szczypta', 'szt.', 'ząbek', 'wg uznania'. ZAKAZ 'ml', 'l', 'szklanka', 'cup'.",
+          },
           category: {
             type: "STRING",
             description:
-              "Nazwa sekcji z przepisu (np. Zaparka, Ciasto, Farsz, Ciasto na pierogi, Sos, Polewa). Zostaw puste, jeśli przepis nie dzieli składników na sekcje.",
+              "OBOWIĄZKOWA nazwa półwyrobu/sekcji (np. Zaparka, Ciasto, Farsz, Ciasto na pierogi, Sos, Polewa, Wykończenie i pieczenie). Nigdy nie zostawiaj pustego pola.",
           },
         },
-        required: ["name", "amount", "unit"],
+        required: ["name", "amount", "unit", "category"],
       },
     },
     steps: {
@@ -222,17 +227,21 @@ const RECIPE_RESPONSE_SCHEMA = {
           step_number: { type: "INTEGER" },
           instruction: {
             type: "STRING",
-            description: "Jasna instrukcja co zrobić w tym kroku",
+            description: "Jasna instrukcja co zrobić w tym kroku (ilości płynów i sypkich podawaj w gramach 'g')",
           },
           step_ingredients: {
             type: "ARRAY",
-            description: "Składniki dodawane konkretnie w tym kroku wraz z ilością",
+            description: "Składniki dodawane konkretnie w tym kroku wraz z ilością w gramach",
             items: {
               type: "OBJECT",
               properties: {
                 name: { type: "STRING" },
                 amount: { type: "NUMBER" },
-                unit: { type: "STRING" },
+                unit: {
+                  type: "STRING",
+                  description:
+                    "Preferuj 'g' (ZAKAZ 'ml', 'l', 'szklanka', 'cup'). Dozwolone też małe miary jak 'łyżeczka', 'szczypta', 'szt.'.",
+                },
               },
               required: ["name", "amount", "unit"],
             },
@@ -262,21 +271,97 @@ const RECIPE_RESPONSE_SCHEMA = {
   ],
 };
 
+function readPngDimensions(bytes: Uint8Array): { width: number; height: number } | null {
+  if (
+    bytes.byteLength < 24 ||
+    bytes[0] !== 0x89 ||
+    bytes[1] !== 0x50 ||
+    bytes[2] !== 0x4e ||
+    bytes[3] !== 0x47
+  ) {
+    return null;
+  }
+  const width =
+    ((bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19]) >>> 0;
+  const height =
+    ((bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23]) >>> 0;
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
+function readJpegDimensions(bytes: Uint8Array): { width: number; height: number } | null {
+  if (bytes.byteLength < 12 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
+    return null;
+  }
+  let offset = 2;
+  while (offset + 8 < bytes.byteLength) {
+    if (bytes[offset] !== 0xff) {
+      offset += 1;
+      continue;
+    }
+    const marker = bytes[offset + 1];
+    if (
+      marker >= 0xc0 &&
+      marker <= 0xcf &&
+      marker !== 0xc4 &&
+      marker !== 0xc8 &&
+      marker !== 0xcc
+    ) {
+      const height = (bytes[offset + 5] << 8) | bytes[offset + 6];
+      const width = (bytes[offset + 7] << 8) | bytes[offset + 8];
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+    if (offset + 3 >= bytes.byteLength) break;
+    const segmentLength = (bytes[offset + 2] << 8) | bytes[offset + 3];
+    if (segmentLength < 2) break;
+    offset += 2 + segmentLength;
+  }
+  return null;
+}
+
+function isHighQualityRasterImage(rawBytes: ArrayBuffer | Uint8Array, contentType: string): boolean {
+  const normalizedType = contentType.split(";")[0].trim().toLowerCase();
+  if (
+    !normalizedType.startsWith("image/") ||
+    normalizedType.includes("svg") ||
+    normalizedType.includes("icon") ||
+    normalizedType.includes("gif")
+  ) {
+    return false;
+  }
+
+  const bytes = rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(rawBytes);
+  if (bytes.byteLength < 20_000 || bytes.byteLength > 6 * 1024 * 1024) {
+    return false;
+  }
+
+  const dims = readPngDimensions(bytes) ?? readJpegDimensions(bytes);
+  if (dims) {
+    return dims.width >= 400 && dims.height >= 300;
+  }
+
+  // Dla WebP lub innych formatów wymagamy solidnego rozmiaru (min. 30 KB)
+  return bytes.byteLength >= 30_000;
+}
+
 async function uploadBytesToSupabaseStorage(
   supabaseUrl: string,
   supabaseServiceKey: string,
   bytes: ArrayBuffer | Uint8Array,
   contentType: string,
   folder = "imported",
+  enforceQuality = false,
 ): Promise<string | null> {
   try {
     const normalizedType = contentType.split(";")[0].trim().toLowerCase();
-    if (!normalizedType.startsWith("image/")) {
+    if (!normalizedType.startsWith("image/") || normalizedType.includes("svg")) {
       return null;
     }
 
-    const byteLength = bytes instanceof Uint8Array ? bytes.byteLength : bytes.byteLength;
-    if (byteLength === 0 || byteLength > 6 * 1024 * 1024) {
+    if (enforceQuality && !isHighQualityRasterImage(bytes, normalizedType)) {
+      return null;
+    }
+
+    if (bytes.byteLength === 0 || bytes.byteLength > 6 * 1024 * 1024) {
       return null;
     }
 
@@ -319,8 +404,13 @@ async function uploadImageToSupabaseStorage(
   supabaseServiceKey: string,
   externalImageUrl: string,
   referer?: string,
+  folder = "imported",
+  enforceQuality = false,
 ): Promise<string | null> {
   if (!isSafePublicHttpUrl(externalImageUrl)) return null;
+  if (/favicon|sprite|logo|avatar|profile_pic|emoji|blank\.png/i.test(externalImageUrl)) {
+    return null;
+  }
 
   try {
     const imgRes = await fetch(externalImageUrl, {
@@ -330,7 +420,8 @@ async function uploadImageToSupabaseStorage(
         Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
         ...(referer ? { Referer: referer } : {}),
       },
-      signal: AbortSignal.timeout(8000),
+      redirect: "follow",
+      signal: AbortSignal.timeout(7000),
     });
     if (!imgRes.ok) return null;
 
@@ -346,12 +437,154 @@ async function uploadImageToSupabaseStorage(
       supabaseServiceKey,
       arrayBuffer,
       rawContentType,
-      "imported",
+      folder,
+      enforceQuality,
     );
   } catch (err) {
     console.warn("Nie udało się skopiować zdjęcia do Supabase Storage:", err);
     return null;
   }
+}
+
+async function searchWebRecipePhotosViaGrounding(
+  geminiApiKey: string,
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  title: string,
+): Promise<string | null> {
+  const cleanTitle = title.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleanTitle) return null;
+
+  try {
+    const res = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": geminiApiKey,
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text: `Znajdź najpopularniejsze sprawdzone przepisy ze zdjęciem na danie: "${cleanTitle}". Zwróć tylko nazwy stron.`,
+                },
+              ],
+            },
+          ],
+          tools: [{ google_search: {} }],
+        }),
+        signal: AbortSignal.timeout(9000),
+      },
+    );
+    if (!res.ok) return null;
+
+    const json = (await res.json()) as {
+      candidates?: Array<{
+        groundingMetadata?: {
+          groundingChunks?: Array<{ web?: { uri?: string } }>;
+        };
+      }>;
+    };
+
+    const pageUrls = Array.from(
+      new Set(
+        (json.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [])
+          .map((chunk) => chunk.web?.uri?.trim())
+          .filter((u): u is string => Boolean(u && isSafePublicHttpUrl(u))),
+      ),
+    ).slice(0, 4);
+
+    if (pageUrls.length === 0) return null;
+
+    const htmlResults = await Promise.allSettled(
+      pageUrls.map((pageUrl) =>
+        fetch(pageUrl, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+            Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+          },
+          redirect: "follow",
+          signal: AbortSignal.timeout(4500),
+        }).then(async (r) => ({
+          pageUrl: r.url || pageUrl,
+          html: r.ok ? (await r.text()).slice(0, 220000) : "",
+        })),
+      ),
+    );
+
+    for (const outcome of htmlResults) {
+      if (outcome.status !== "fulfilled" || !outcome.value.html) continue;
+      const { pageUrl, html } = outcome.value;
+      const jsonLd = extractRecipeJsonLdFromHtml(html);
+      const ogImage =
+        extractMetaContent(html, "og:image") ||
+        extractMetaContent(html, "twitter:image");
+
+      for (const candidateUrl of [jsonLd.imageUrl, ogImage]) {
+        if (!candidateUrl) continue;
+        const uploaded = await uploadImageToSupabaseStorage(
+          supabaseUrl,
+          supabaseServiceKey,
+          candidateUrl,
+          pageUrl,
+          "web-search",
+          true,
+        );
+        if (uploaded) return uploaded;
+      }
+    }
+  } catch (err) {
+    console.warn("Wyszukiwanie zdjęcia dania w sieci nie powiodło się:", err);
+  }
+
+  return null;
+}
+
+async function tryWikipediaFoodThumbnail(
+  supabaseUrl: string,
+  supabaseServiceKey: string,
+  title: string,
+): Promise<string | null> {
+  const cleanTitle = title.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+  if (!cleanTitle) return null;
+
+  for (const lang of ["pl", "en"]) {
+    try {
+      const searchUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
+        cleanTitle,
+      )}&gsrlimit=3&prop=pageimages&pithumbsize=1200&format=json&origin=*`;
+      const res = await fetch(searchUrl, { signal: AbortSignal.timeout(4500) });
+      if (!res.ok) continue;
+      const data = (await res.json()) as {
+        query?: {
+          pages?: Record<string, { thumbnail?: { source?: string } }>;
+        };
+      };
+      const pages = Object.values(data.query?.pages ?? {});
+      for (const page of pages) {
+        const src = page.thumbnail?.source;
+        if (src && isSafePublicHttpUrl(src) && !/\.svg(\?|$)/i.test(src)) {
+          const uploaded = await uploadImageToSupabaseStorage(
+            supabaseUrl,
+            supabaseServiceKey,
+            src,
+            undefined,
+            "web-search",
+            true,
+          );
+          if (uploaded) return uploaded;
+        }
+      }
+    } catch {
+      // Spróbuj kolejnej wersji językowej
+    }
+  }
+  return null;
 }
 
 function decodeBase64ToUint8Array(base64: string): Uint8Array {
@@ -434,45 +667,6 @@ async function tryGenerateFoodCoverWithGemini(
   return null;
 }
 
-async function tryWikipediaFoodThumbnail(
-  supabaseUrl: string,
-  supabaseServiceKey: string,
-  title: string,
-): Promise<string | null> {
-  const cleanTitle = title.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
-  if (!cleanTitle) return null;
-
-  for (const lang of ["pl", "en"]) {
-    try {
-      const searchUrl = `https://${lang}.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(
-        cleanTitle,
-      )}&gsrlimit=3&prop=pageimages&pithumbsize=1000&format=json&origin=*`;
-      const res = await fetch(searchUrl, { signal: AbortSignal.timeout(4500) });
-      if (!res.ok) continue;
-      const data = (await res.json()) as {
-        query?: {
-          pages?: Record<string, { thumbnail?: { source?: string } }>;
-        };
-      };
-      const pages = Object.values(data.query?.pages ?? {});
-      for (const page of pages) {
-        const src = page.thumbnail?.source;
-        if (src && isSafePublicHttpUrl(src) && !/\.svg(\?|$)/i.test(src)) {
-          const uploaded = await uploadImageToSupabaseStorage(
-            supabaseUrl,
-            supabaseServiceKey,
-            src,
-          );
-          if (uploaded) return uploaded;
-        }
-      }
-    } catch {
-      // Spróbuj kolejnej wersji językowej
-    }
-  }
-  return null;
-}
-
 async function generateAndUploadFoodCover(params: {
   geminiApiKey: string;
   supabaseUrl: string;
@@ -481,20 +675,30 @@ async function generateAndUploadFoodCover(params: {
   description?: string | null;
   category?: string | null;
 }): Promise<string | null> {
-  const aiCover = await tryGenerateFoodCoverWithGemini(
+  // 1. Najpierw szukaj prawdziwego, jakościowego zdjęcia potrawy w internecie
+  const groundingPhoto = await searchWebRecipePhotosViaGrounding(
+    params.geminiApiKey,
+    params.supabaseUrl,
+    params.supabaseServiceKey,
+    params.title,
+  );
+  if (groundingPhoto) return groundingPhoto;
+
+  const wikiPhoto = await tryWikipediaFoodThumbnail(
+    params.supabaseUrl,
+    params.supabaseServiceKey,
+    params.title,
+  );
+  if (wikiPhoto) return wikiPhoto;
+
+  // 2. W ostateczności (brak wyników lub słaba jakość) wygeneruj zdjęcie przez AI
+  return await tryGenerateFoodCoverWithGemini(
     params.geminiApiKey,
     params.supabaseUrl,
     params.supabaseServiceKey,
     params.title,
     params.description,
     params.category,
-  );
-  if (aiCover) return aiCover;
-
-  return await tryWikipediaFoodThumbnail(
-    params.supabaseUrl,
-    params.supabaseServiceKey,
-    params.title,
   );
 }
 
@@ -687,13 +891,16 @@ Jesteś profesjonalnym szefem kuchni i tłumaczem kulinarnym.
 Przeanalizuj dostarczony materiał (tekst ze strony/Instagrama i/lub zdjęcie).
 1. Wyciągnij kompletny przepis kulinarny.
 2. PRZETŁUMACZ CAŁOŚĆ NA JĘZYK POLSKI (jeśli już jest po polsku, zachowaj dokładne ilości i nazwy).
-3. Przelicz wszystkie jednostki anglosaskie (cups, oz, lbs, fahrenheit) na polskie jednostki metryczne (g, ml, szt., łyżki, łyżeczki, °C).
+3. KONWERSJA NA WAGĘ KUCHENNĄ (TYLKO GRAMY): Użytkownik używa cyfrowej wagi kuchennej — ZAWSZE przeliczaj wszystkie mililitry (ml), litry (l), szklanki, kubki (cups), uncje (oz, fl oz), funty (lbs) i inne objętości na GRAMY ("g") z uwzględnieniem gęstości składnika (np. 110 ml mleka -> 113 g, 140 ml śmietanki -> 144 g, 100 ml wody -> 100 g, 100 ml oleju -> 92 g, 1 szklanka mąki -> 135 g, 1 szklanka cukru -> 200 g, 1 szklanka mleka -> 250 g). ZAKAZ używania jednostek "ml", "l", "szklanka", "szklanki", "cup" zarówno w "ingredients", w "step_ingredients", jak i w treści kroków "instruction"! Wyjątkowo małe ilości przypraw/dodatków mogą zachować "łyżeczka", "łyżeczki", "szczypta", "szt.", "ząbek", "do smaku" / "wg uznania".
 4. Podziel przygotowanie na logiczne, pojedyncze kroki w stylu Thermomixa.
-5. KLUCZOWE: W każdym kroku w polu "step_ingredients" wypisz DOKŁADNIE te składniki i ich ilości, które są dodawane lub używane w TYM konkretnym kroku (aby użytkownik podczas gotowania nie musiał wracać do ogólnej listy składników).
+5. KLUCZOWE: W każdym kroku w polu "step_ingredients" wypisz DOKŁADNIE te składniki i ich ilości (w gramach!), które są dodawane lub używane w TYM konkretnym kroku.
 6. Jeśli w kroku występuje pieczenie, gotowanie, odstawienie lub smażenie przez określony czas, przelicz ten czas na sekundy i wpisz w pole "timer_seconds" (np. 10 minut = 600). Jeśli brak czasu, wpisz 0.
 7. Jeśli składnik nie ma podanej dokładnej ilości (np. "olej do posmarowania", "sól do smaku"), ustaw amount na 0 i wpisz w unit np. "wg uznania" lub "do posmarowania" — NIGDY nie wymyślaj na siłę "1 szt.".
 8. Jeśli składnik ma podany zamiennik lub alternatywę (np. "15 g świeżych drożdży lub 8 g suszonych"), zachowaj ten dopisek w polu name (np. "świeże drożdże (lub 8 g suszonych)").
-9. BARDZO WAŻNE — SEKCJE SKŁADNIKÓW: Jeśli przepis dzieli składniki na części/sekcje (np. "Zaparka", "Ciasto", "Farsz", "Ciasto na pierogi", "Sos", "Krem", "Polewa", "Marynata", "Nadzienie"), wpisz dokładną nazwę sekcji w pole "category" każdego składnika z tej sekcji (np. "Zaparka", "Ciasto", "Farsz"), zachowując kolejność sekcji z przepisu oraz czystą nazwę składnika w polu "name" (bez dopisywania sekcji w nawiasie). Jeśli przepis nie ma podziału na sekcje, zostaw "category" puste.
+9. KRYTYCZNE — OBOWIĄZKOWY PODZIAŁ SKŁADNIKÓW NA PÓŁWYROBY (SEKCJE): Każdy składnik w "ingredients" MUSI mieć wypełnione pole "category" nazwą półwyrobu/etapu wykonania (NIGDY nie zostawiaj "category" pustego ani jednej ogólnej grupy dla całego przepisu!).
+   - Jeśli przepis ma gotowe sekcje (np. "Zaparka", "Ciasto", "Farsz", "Ciasto na pierogi", "Sos", "Krem", "Polewa", "Marynata", "Posmarowanie i pieczenie"), przypisz każdemu składnikowi dokładnie jego sekcję.
+   - NAWET JEŚLI źródłowy przepis wymienia wszystkie składniki w jednej liście bez nagłówków, PRZEANALIZUJ kroki ("steps") i SAMODZIELNIE podziel składniki na logiczne półwyroby na podstawie etapów (np. w chlebku Shokupan: co trafia do rondelka -> "Zaparka", co do misy -> "Ciasto główne", co na koniec przed pieczeniem -> "Posmarowanie i wykończenie"; w innych daniach np. "Baza", "Marynata", "Sos", "Dodatki i podanie").
+   - Jeśli ten sam składnik jest używany w dwóch półwyrobach (np. mleko lub mąka w Zaparce i w Cieście), wypisz go osobno w obu sekcjach z odpowiednią ilością w gramach!
 `.trim();
 
     const parts: GeminiPart[] = [{ text: prompt }];
@@ -735,6 +942,8 @@ Przeanalizuj dostarczony materiał (tekst ze strony/Instagrama i/lub zdjęcie).
           supabaseServiceKey,
           externalImageUrl,
           sourcePlatform === "instagram" ? "https://www.instagram.com/" : url || undefined,
+          "imported",
+          true,
         )
       : Promise.resolve<string | null>(null);
 
