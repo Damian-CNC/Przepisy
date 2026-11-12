@@ -111,7 +111,9 @@ export function GlassButton({
       ) : (
         leftIcon && <span className="inline-flex shrink-0">{leftIcon}</span>
       )}
-      <span>{isLoading && loadingText ? loadingText : children}</span>
+      <span className="inline-flex items-center justify-center">
+        {isLoading && loadingText ? loadingText : children}
+      </span>
       {!isLoading && rightIcon && (
         <span className="inline-flex shrink-0">{rightIcon}</span>
       )}

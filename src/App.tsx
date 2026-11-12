@@ -2,7 +2,6 @@ import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { MotionConfig } from 'framer-motion'
 import {
   AlertCircle,
-  BookOpen,
   ChefHat,
   Heart,
   Plus,
@@ -261,10 +260,10 @@ export function App() {
                 }
               />
             ) : (
-              <div className="pb-32">
-                <header className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 pt-[max(1.25rem,env(safe-area-inset-top))] sm:px-6">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
+              <div className="pb-10">
+                <header className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pt-[calc(env(safe-area-inset-top,0px)+1.25rem)] sm:gap-5 sm:px-6">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
                       <div className="mb-1.5 flex items-center gap-2">
                         <GlassPill
                           variant="tag"
@@ -291,17 +290,38 @@ export function App() {
                       </h1>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    {/* Akcje w prawym górnym rogu */}
+                    <div className="flex shrink-0 items-center gap-2 pt-0.5">
+                      {/* Mobilny przycisk Odśwież — idealnie wyśrodkowana ikona */}
                       <GlassButton
                         variant="secondary"
                         size="md"
                         aria-label="Odśwież listę przepisów"
+                        disabled={isRecipesLoading && recipes.length > 0}
+                        onClick={() => void refresh()}
+                        className="size-11 !gap-0 !px-0 sm:hidden"
+                      >
+                        <RefreshCw
+                          className={cn(
+                            'size-4.5',
+                            isRecipesLoading &&
+                              recipes.length > 0 &&
+                              'animate-spin motion-reduce:animate-none',
+                          )}
+                          aria-hidden="true"
+                        />
+                      </GlassButton>
+
+                      {/* Desktopowy przycisk Odśwież z etykietą */}
+                      <GlassButton
+                        variant="secondary"
+                        size="md"
                         isLoading={isRecipesLoading && recipes.length > 0}
                         onClick={() => void refresh()}
-                        className="size-11 px-0 sm:w-auto sm:px-4"
                         leftIcon={<RefreshCw className="size-4" aria-hidden="true" />}
+                        className="hidden sm:inline-flex"
                       >
-                        <span className="hidden sm:inline">Odśwież</span>
+                        Odśwież
                       </GlassButton>
 
                       <GlassButton
@@ -313,8 +333,31 @@ export function App() {
                       >
                         Dodaj przepis AI
                       </GlassButton>
+
+                      {/* Ustawienia zawsze w prawym górnym rogu */}
+                      <GlassButton
+                        variant="secondary"
+                        size="md"
+                        aria-label="Ustawienia"
+                        onClick={() => setIsSettingsModalOpen(true)}
+                        className="size-11 !gap-0 !px-0"
+                      >
+                        <Settings className="size-4.5" aria-hidden="true" />
+                      </GlassButton>
                     </div>
                   </div>
+
+                  {/* Mobilny przycisk Dodaj przepis AI (jeden, bez duplikacji na dole) */}
+                  <GlassButton
+                    variant="primary"
+                    size="md"
+                    fullWidth
+                    leftIcon={<Sparkles className="size-4" aria-hidden="true" />}
+                    onClick={() => setIsImportModalOpen(true)}
+                    className="sm:hidden"
+                  >
+                    Dodaj przepis AI
+                  </GlassButton>
 
                   {/* Pływający pasek wyszukiwania w semantycznym elemencie <search> */}
                   <search>
@@ -512,51 +555,6 @@ export function App() {
                     </section>
                   )}
                 </main>
-
-                {/* Pływająca dolna nawigacja Liquid Pill (Thumb Zone) */}
-                <nav
-                  aria-label="Nawigacja główna"
-                  className="pointer-events-none fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 flex justify-center px-4"
-                >
-                  <GlassPill
-                    variant="surface"
-                    size="sm"
-                    className="pointer-events-auto gap-1.5 p-1.5"
-                  >
-                    <GlassPill
-                      as="button"
-                      variant="active"
-                      size="md"
-                      leftIcon={<BookOpen className="size-4" aria-hidden="true" />}
-                      aria-current="page"
-                      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                    >
-                      Przepisy
-                    </GlassPill>
-
-                    <GlassPill
-                      as="button"
-                      variant="surface"
-                      size="md"
-                      leftIcon={<Plus className="size-4" aria-hidden="true" />}
-                      onClick={() => setIsImportModalOpen(true)}
-                      className="border-transparent bg-transparent shadow-none dark:bg-transparent dark:shadow-none"
-                    >
-                      Dodaj AI
-                    </GlassPill>
-
-                    <GlassPill
-                      as="button"
-                      variant="surface"
-                      size="md"
-                      leftIcon={<Settings className="size-4" aria-hidden="true" />}
-                      onClick={() => setIsSettingsModalOpen(true)}
-                      className="border-transparent bg-transparent shadow-none dark:bg-transparent dark:shadow-none"
-                    >
-                      Ustawienia
-                    </GlassPill>
-                  </GlassPill>
-                </nav>
               </div>
             )}
 

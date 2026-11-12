@@ -119,7 +119,7 @@ export function RecipeDetailView({
       {/* Zdjęcie nagłówkowe z paralaksą przy przewijaniu */}
       <div
         ref={heroWrapperRef}
-        className="recipe-hero-parallax-wrapper relative h-[min(56dvh,26rem)] min-h-72 w-full overflow-clip bg-gradient-to-br from-amber-200/85 via-orange-200/75 to-emerald-200/75 dark:from-amber-950/85 dark:via-stone-900 dark:to-emerald-950/80"
+        className="recipe-hero-parallax-wrapper relative h-[min(58dvh,27rem)] min-h-80 w-full overflow-clip bg-gradient-to-br from-amber-200/85 via-orange-200/75 to-emerald-200/75 dark:from-amber-950/85 dark:via-stone-900 dark:to-emerald-950/80"
       >
         <motion.div
           style={useMotionFallback ? { y: fallbackY, scale: fallbackScale } : undefined}
@@ -150,8 +150,8 @@ export function RecipeDetailView({
           aria-hidden="true"
         />
 
-        {/* Pasek górnych akcji na zdjęciu */}
-        <div className="absolute inset-x-0 top-0 z-10 mx-auto flex max-w-4xl items-center justify-between gap-2 px-4 pt-[max(0.875rem,env(safe-area-inset-top))] sm:px-6">
+        {/* Pasek górnych akcji na zdjęciu (z zapasem poniżej Dynamic Island na iPhone) */}
+        <div className="absolute inset-x-0 top-0 z-10 mx-auto flex max-w-4xl items-center justify-between gap-2 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] sm:px-6">
           <GlassButton
             variant="secondary"
             size="md"

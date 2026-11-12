@@ -295,7 +295,7 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
       <div className="relative isolate flex min-h-dvh flex-col bg-[#fbf8f3] text-stone-900 dark:bg-zinc-950 dark:text-stone-50">
         <AmbientBackground />
 
-        <header className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-3 sm:px-6">
+        <header className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-3 sm:px-6">
           <GlassButton
             variant="secondary"
             size="md"
@@ -368,9 +368,9 @@ export function CookingModeView({ recipe, targetServings, onExit }: CookingModeV
           : ''}
       </div>
 
-      {/* Górny pasek postępu i statusu */}
+      {/* Górny pasek postępu i statusu (z zapasem poniżej Dynamic Island na iPhone) */}
       <header className="sticky top-0 z-30 border-b border-white/40 bg-[#fbf8f3]/75 backdrop-blur-2xl backdrop-saturate-150 dark:border-white/10 dark:bg-zinc-950/75">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3 sm:px-6">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-3 sm:px-6">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <GlassButton
               variant="secondary"

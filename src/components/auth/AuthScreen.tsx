@@ -95,7 +95,7 @@ export function AuthScreen({
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-lg flex-col justify-center px-4 py-10 sm:px-6">
+    <main className="mx-auto flex min-h-dvh w-full max-w-lg flex-col justify-center px-4 pt-[calc(env(safe-area-inset-top,0px)+1.5rem)] pb-[calc(env(safe-area-inset-bottom,0px)+1.5rem)] sm:px-6">
       <GlassCard variant="elevated" padding="lg" className="w-full">
         <div className="flex flex-col gap-6">
           {/* Logo i nagłówek */}

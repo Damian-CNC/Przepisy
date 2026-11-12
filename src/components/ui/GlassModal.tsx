@@ -219,7 +219,7 @@ export function GlassModal({
         'border border-white/50 dark:border-white/15',
         'shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.7),0_24px_64px_-12px_rgba(28,25,23,0.28)]',
         'dark:shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.14),0_28px_72px_-12px_rgba(0,0,0,0.7)]',
-        'max-h-[min(88dvh,46rem)] overflow-y-auto',
+        'max-h-[min(86dvh,calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-2rem),46rem)] overflow-y-auto',
         SIZE_CLASSES[size],
         className,
       )}
