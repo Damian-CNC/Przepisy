@@ -17,7 +17,7 @@ import {
   Trash2,
   Users,
 } from 'lucide-react'
-import { formatScaledAmount } from '../../lib/recipesApi'
+import { formatScaledAmount, groupIngredientsBySection } from '../../lib/recipesApi'
 import type { RecipeRow } from '../../lib/supabase'
 import { GlassButton, GlassCard, GlassModal, GlassPill, cn } from '../ui'
 import { formatTimerLabel, getSourceMeta } from './recipeMeta'
@@ -386,29 +386,50 @@ export function RecipeDetailView({
                   Ten przepis nie ma jeszcze zapisanej listy składników.
                 </p>
               ) : (
-                <ul className="divide-y divide-stone-900/10 dark:divide-white/10">
-                  {recipe.ingredients.map((ing, index) => {
-                    const scaled =
-                      ing.amount > 0
-                        ? formatScaledAmount(ing.amount, baseServings, targetServings)
-                        : ''
-                    const amountLabel = scaled ? `${scaled} ${ing.unit}`.trim() : ing.unit || 'wg uznania'
+                <div className="space-y-5">
+                  {groupIngredientsBySection(recipe.ingredients).map((group, groupIdx) => (
+                    <div
+                      key={group.section ?? `group-${groupIdx}`}
+                      className={cn(
+                        groupIdx > 0
+                          ? 'border-t border-stone-900/10 pt-4 dark:border-white/10'
+                          : undefined,
+                      )}
+                    >
+                      {group.section && (
+                        <h3 className="mb-2.5 text-sm font-semibold tracking-wide text-amber-800 dark:text-amber-300">
+                          {group.section}:
+                        </h3>
+                      )}
 
-                    return (
-                      <li
-                        key={`${ing.name}-${index}`}
-                        className="flex items-baseline justify-between gap-4 py-2.5 first:pt-0 last:pb-0"
-                      >
-                        <span className="text-base text-stone-800 dark:text-stone-100">
-                          {ing.name}
-                        </span>
-                        <span className="shrink-0 text-base font-semibold text-amber-800 tabular-nums dark:text-amber-300">
-                          {amountLabel}
-                        </span>
-                      </li>
-                    )
-                  })}
-                </ul>
+                      <ul className="divide-y divide-stone-900/10 dark:divide-white/10">
+                        {group.items.map((ing, index) => {
+                          const scaled =
+                            ing.amount > 0
+                              ? formatScaledAmount(ing.amount, baseServings, targetServings)
+                              : ''
+                          const amountLabel = scaled
+                            ? `${scaled} ${ing.unit}`.trim()
+                            : ing.unit || 'wg uznania'
+
+                          return (
+                            <li
+                              key={`${ing.name}-${index}`}
+                              className="flex items-baseline justify-between gap-4 py-2.5 first:pt-0 last:pb-0"
+                            >
+                              <span className="text-base text-stone-800 dark:text-stone-100">
+                                {ing.name}
+                              </span>
+                              <span className="shrink-0 text-base font-semibold text-amber-800 tabular-nums dark:text-amber-300">
+                                {amountLabel}
+                              </span>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
               )}
             </GlassCard>
           </section>

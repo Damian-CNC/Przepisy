@@ -24,7 +24,7 @@ import {
   Upload,
 } from 'lucide-react'
 import { prepareImageForAi, uploadRecipeImage } from '../../lib/imageCompression'
-import { importRecipeWithAi } from '../../lib/recipesApi'
+import { groupIngredientsBySection, importRecipeWithAi } from '../../lib/recipesApi'
 import type {
   RecipeCategory,
   RecipeIngredient,
@@ -59,6 +59,7 @@ interface ManualIngredientRow {
   name: string
   amount: string
   unit: string
+  category: string
 }
 
 interface ManualStepIngredientRow {
@@ -94,7 +95,7 @@ const COMPACT_FIELD_CLASS = cn(
 )
 
 function createEmptyIngredient(): ManualIngredientRow {
-  return { id: crypto.randomUUID(), name: '', amount: '', unit: 'g' }
+  return { id: crypto.randomUUID(), name: '', amount: '', unit: 'g', category: '' }
 }
 
 function createEmptyStepIngredient(): ManualStepIngredientRow {
@@ -456,11 +457,15 @@ export function SmartImportModal({
     }
 
     const parsedIngredients: RecipeIngredient[] = manualIngredients
-      .map((item) => ({
-        name: item.name.trim(),
-        amount: parsePositiveNumber(item.amount, 0),
-        unit: item.unit.trim(),
-      }))
+      .map((item) => {
+        const category = item.category.trim().replace(/:+$/, '')
+        return {
+          name: item.name.trim(),
+          amount: parsePositiveNumber(item.amount, 0),
+          unit: item.unit.trim(),
+          ...(category ? { category } : {}),
+        }
+      })
       .filter((item) => item.name.length > 0)
 
     const parsedSteps: RecipeStep[] = manualSteps
@@ -785,16 +790,38 @@ export function SmartImportModal({
                 <h3 className="mb-2.5 text-sm font-semibold tracking-wide text-stone-700 uppercase dark:text-stone-300">
                   Składniki ({previewDraft.ingredients?.length ?? 0})
                 </h3>
-                <ul className="space-y-1.5 text-sm text-stone-800 dark:text-stone-200">
-                  {(previewDraft.ingredients ?? []).map((ing, idx) => (
-                    <li key={`${ing.name}-${idx}`} className="flex justify-between gap-2">
-                      <span>{ing.name}</span>
-                      <span className="shrink-0 font-semibold tabular-nums text-amber-800 dark:text-amber-300">
-                        {ing.amount > 0 ? `${ing.amount} ${ing.unit}`.trim() : ing.unit || 'wg uznania'}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="space-y-3">
+                  {groupIngredientsBySection(previewDraft.ingredients ?? []).map(
+                    (group, groupIdx) => (
+                      <div
+                        key={group.section ?? `preview-group-${groupIdx}`}
+                        className={cn(
+                          groupIdx > 0
+                            ? 'border-t border-stone-900/10 pt-2.5 dark:border-white/10'
+                            : undefined,
+                        )}
+                      >
+                        {group.section && (
+                          <p className="mb-1.5 text-xs font-semibold tracking-wide text-amber-800 dark:text-amber-300">
+                            {group.section}:
+                          </p>
+                        )}
+                        <ul className="space-y-1.5 text-sm text-stone-800 dark:text-stone-200">
+                          {group.items.map((ing, idx) => (
+                            <li key={`${ing.name}-${idx}`} className="flex justify-between gap-2">
+                              <span>{ing.name}</span>
+                              <span className="shrink-0 font-semibold tabular-nums text-amber-800 dark:text-amber-300">
+                                {ing.amount > 0
+                                  ? `${ing.amount} ${ing.unit}`.trim()
+                                  : ing.unit || 'wg uznania'}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ),
+                  )}
+                </div>
               </GlassCard>
 
               <GlassCard variant="default" padding="sm">
@@ -1223,68 +1250,81 @@ export function SmartImportModal({
                     <legend className="px-1 text-sm font-semibold text-stone-900 dark:text-stone-100">
                       Składniki
                     </legend>
-                    <div className="space-y-2.5">
+                    <div className="space-y-3">
                       {manualIngredients.map((ing, index) => (
-                        <div
-                          key={ing.id}
-                          className="grid grid-cols-[minmax(0,1fr)_4.5rem_3.75rem_2.75rem] items-center gap-1.5 sm:gap-2"
-                        >
+                        <div key={ing.id} className="space-y-1.5">
+                          <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_3.75rem_2.75rem] items-center gap-1.5 sm:gap-2">
+                            <input
+                              type="text"
+                              aria-label={`Nazwa składnika ${index + 1}`}
+                              value={ing.name}
+                              onChange={(e) =>
+                                setManualIngredients((prev) =>
+                                  prev.map((row) =>
+                                    row.id === ing.id ? { ...row, name: e.target.value } : row,
+                                  ),
+                                )
+                              }
+                              placeholder="Składnik (np. Masło)"
+                              className={COMPACT_FIELD_CLASS}
+                            />
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              aria-label={`Ilość składnika ${index + 1}`}
+                              value={ing.amount}
+                              onChange={(e) =>
+                                setManualIngredients((prev) =>
+                                  prev.map((row) =>
+                                    row.id === ing.id ? { ...row, amount: e.target.value } : row,
+                                  ),
+                                )
+                              }
+                              placeholder="Ilość"
+                              className={COMPACT_FIELD_CLASS}
+                            />
+                            <input
+                              type="text"
+                              aria-label={`Jednostka składnika ${index + 1}`}
+                              value={ing.unit}
+                              onChange={(e) =>
+                                setManualIngredients((prev) =>
+                                  prev.map((row) =>
+                                    row.id === ing.id ? { ...row, unit: e.target.value } : row,
+                                  ),
+                                )
+                              }
+                              placeholder="Jedn."
+                              className={COMPACT_FIELD_CLASS}
+                            />
+                            <button
+                              type="button"
+                              aria-label={`Usuń składnik ${index + 1}`}
+                              disabled={manualIngredients.length <= 1}
+                              onClick={() =>
+                                setManualIngredients((prev) =>
+                                  prev.filter((row) => row.id !== ing.id),
+                                )
+                              }
+                              className="inline-flex size-11 cursor-pointer items-center justify-center rounded-xl text-stone-500 hover:bg-red-500/10 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-35 dark:text-stone-400"
+                            >
+                              <Trash2 className="size-4" aria-hidden="true" />
+                            </button>
+                          </div>
                           <input
                             type="text"
-                            aria-label={`Nazwa składnika ${index + 1}`}
-                            value={ing.name}
+                            aria-label={`Sekcja składnika ${index + 1} (opcjonalnie)`}
+                            value={ing.category}
                             onChange={(e) =>
                               setManualIngredients((prev) =>
                                 prev.map((row) =>
-                                  row.id === ing.id ? { ...row, name: e.target.value } : row,
+                                  row.id === ing.id ? { ...row, category: e.target.value } : row,
                                 ),
                               )
                             }
-                            placeholder="Składnik (np. Masło)"
-                            className={COMPACT_FIELD_CLASS}
+                            placeholder="Sekcja (opcjonalnie, np. Zaparka, Ciasto, Farsz)"
+                            className={cn(COMPACT_FIELD_CLASS, 'min-h-9 text-sm')}
                           />
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            aria-label={`Ilość składnika ${index + 1}`}
-                            value={ing.amount}
-                            onChange={(e) =>
-                              setManualIngredients((prev) =>
-                                prev.map((row) =>
-                                  row.id === ing.id ? { ...row, amount: e.target.value } : row,
-                                ),
-                              )
-                            }
-                            placeholder="Ilość"
-                            className={COMPACT_FIELD_CLASS}
-                          />
-                          <input
-                            type="text"
-                            aria-label={`Jednostka składnika ${index + 1}`}
-                            value={ing.unit}
-                            onChange={(e) =>
-                              setManualIngredients((prev) =>
-                                prev.map((row) =>
-                                  row.id === ing.id ? { ...row, unit: e.target.value } : row,
-                                ),
-                              )
-                            }
-                            placeholder="Jedn."
-                            className={COMPACT_FIELD_CLASS}
-                          />
-                          <button
-                            type="button"
-                            aria-label={`Usuń składnik ${index + 1}`}
-                            disabled={manualIngredients.length <= 1}
-                            onClick={() =>
-                              setManualIngredients((prev) =>
-                                prev.filter((row) => row.id !== ing.id),
-                              )
-                            }
-                            className="inline-flex size-11 cursor-pointer items-center justify-center rounded-xl text-stone-500 hover:bg-red-500/10 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-35 dark:text-stone-400"
-                          >
-                            <Trash2 className="size-4" aria-hidden="true" />
-                          </button>
                         </div>
                       ))}
                     </div>

@@ -425,3 +425,46 @@ export function formatScaledAmount(
 
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1).replace(/\.0$/, '')
 }
+
+export interface IngredientSectionGroup {
+  section: string | null
+  items: RecipeIngredient[]
+}
+
+/**
+ * Grupuje składniki według nazwy sekcji (`category`, np. „Zaparka”, „Ciasto”, „Farsz”)
+ * z zachowaniem kolejności występowania w przepisie.
+ */
+export function groupIngredientsBySection(
+  ingredients: RecipeIngredient[],
+): IngredientSectionGroup[] {
+  if (ingredients.length === 0) return []
+
+  const groups: Array<{ key: string; section: string | null; items: RecipeIngredient[] }> = []
+  const byKey = new Map<string, number>()
+  let hasNamedSections = false
+
+  for (const ing of ingredients) {
+    const cleaned = typeof ing.category === 'string' ? ing.category.trim().replace(/:+$/, '') : ''
+    const section = cleaned.length > 0 ? cleaned : null
+    if (section) hasNamedSections = true
+
+    const key = section ? section.toLowerCase() : '__none__'
+    const existingIndex = byKey.get(key)
+    if (existingIndex !== undefined) {
+      groups[existingIndex].items.push(ing)
+    } else {
+      byKey.set(key, groups.length)
+      groups.push({ key, section, items: [ing] })
+    }
+  }
+
+  if (!hasNamedSections) {
+    return [{ section: null, items: ingredients }]
+  }
+
+  return groups.map((group) => ({
+    section: group.section ?? 'Pozostałe',
+    items: group.items,
+  }))
+}

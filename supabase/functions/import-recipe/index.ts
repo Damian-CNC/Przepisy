@@ -195,6 +195,11 @@ const RECIPE_RESPONSE_SCHEMA = {
           name: { type: "STRING" },
           amount: { type: "NUMBER" },
           unit: { type: "STRING" },
+          category: {
+            type: "STRING",
+            description:
+              "Nazwa sekcji z przepisu (np. Zaparka, Ciasto, Farsz, Ciasto na pierogi, Sos, Polewa). Zostaw puste, jeśli przepis nie dzieli składników na sekcje.",
+          },
         },
         required: ["name", "amount", "unit"],
       },
@@ -492,7 +497,7 @@ Przeanalizuj dostarczony materiał (tekst ze strony/Instagrama i/lub zdjęcie).
 6. Jeśli w kroku występuje pieczenie, gotowanie, odstawienie lub smażenie przez określony czas, przelicz ten czas na sekundy i wpisz w pole "timer_seconds" (np. 10 minut = 600). Jeśli brak czasu, wpisz 0.
 7. Jeśli składnik nie ma podanej dokładnej ilości (np. "olej do posmarowania", "sól do smaku"), ustaw amount na 0 i wpisz w unit np. "wg uznania" lub "do posmarowania" — NIGDY nie wymyślaj na siłę "1 szt.".
 8. Jeśli składnik ma podany zamiennik lub alternatywę (np. "15 g świeżych drożdży lub 8 g suszonych"), zachowaj ten dopisek w polu name (np. "świeże drożdże (lub 8 g suszonych)").
-9. Jeśli przepis ma wyraźne sekcje (np. "Zaparka", "Ciasto", "Krem", "Polewa") i ten sam składnik występuje w więcej niż jednej sekcji, dopisz sekcję w nawiasie do pola name (np. "mąka pszenna T750 (zaparka)" oraz "mąka pszenna T750 (ciasto)").
+9. BARDZO WAŻNE — SEKCJE SKŁADNIKÓW: Jeśli przepis dzieli składniki na części/sekcje (np. "Zaparka", "Ciasto", "Farsz", "Ciasto na pierogi", "Sos", "Krem", "Polewa", "Marynata", "Nadzienie"), wpisz dokładną nazwę sekcji w pole "category" każdego składnika z tej sekcji (np. "Zaparka", "Ciasto", "Farsz"), zachowując kolejność sekcji z przepisu oraz czystą nazwę składnika w polu "name" (bez dopisywania sekcji w nawiasie). Jeśli przepis nie ma podziału na sekcje, zostaw "category" puste.
 `.trim();
 
     const parts: GeminiPart[] = [{ text: prompt }];
