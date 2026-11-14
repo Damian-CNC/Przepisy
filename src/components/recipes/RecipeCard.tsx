@@ -25,6 +25,8 @@ export function RecipeCard({ recipe, onSelect, onToggleFavorite }: RecipeCardPro
   const totalMinutes = getTotalMinutes(recipe)
   const servings = recipe.servings && recipe.servings > 0 ? recipe.servings : 2
   const isFavorite = Boolean(recipe.is_favorite)
+  const ingredientsCount = Array.isArray(recipe.ingredients) ? recipe.ingredients.length : 0
+  const stepsCount = Array.isArray(recipe.steps) ? recipe.steps.length : 0
 
   return (
     <GlassCard variant="interactive" padding="none" className="h-full">
@@ -102,8 +104,8 @@ export function RecipeCard({ recipe, onSelect, onToggleFavorite }: RecipeCardPro
               </p>
             ) : (
               <p className="text-sm text-stone-500 dark:text-stone-400">
-                {recipe.ingredients.length > 0
-                  ? `${recipe.ingredients.length} składników • ${recipe.steps.length} kroków`
+                {ingredientsCount > 0
+                  ? `${ingredientsCount} składników • ${stepsCount} kroków`
                   : 'Gotowy do przygotowania'}
               </p>
             )}
@@ -114,9 +116,9 @@ export function RecipeCard({ recipe, onSelect, onToggleFavorite }: RecipeCardPro
                   <Users className="size-3.5 text-amber-700 dark:text-amber-400" aria-hidden="true" />
                   <span>{servings} porcje</span>
                 </span>
-                {recipe.steps.length > 0 && (
+                {stepsCount > 0 && (
                   <span className="inline-flex items-center rounded-full border border-stone-900/10 bg-white/60 px-2.5 py-1 text-xs font-medium text-stone-700 tabular-nums dark:border-white/10 dark:bg-white/10 dark:text-stone-200">
-                    {recipe.steps.length} kroków
+                    {stepsCount} kroków
                   </span>
                 )}
               </div>

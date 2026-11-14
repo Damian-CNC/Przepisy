@@ -29,6 +29,8 @@ create table if not exists public.recipes (
     -- [{ "step_number": 1, "instruction": "Wymieszaj składniki...", "step_ingredients": [{ "name": "Mąka", "amount": 200, "unit": "g" }], "timer_seconds": 120, "tip": "Na wolnych obrotach" }]
     steps jsonb not null default '[]'::jsonb,
     nutrition jsonb default null,
+    -- Powiązane przepisy z własnym nagłówkiem (np. [{ "recipe_id": "...", "label": "Najlepiej podawać z:" }])
+    linked_recipes jsonb not null default '[]'::jsonb,
     created_by uuid references auth.users(id) on delete set null
 );
 
@@ -100,6 +102,9 @@ to authenticated
 using (bucket_id = 'recipe-images');
 
 -- 4. Włączenie Supabase Realtime dla tabeli recipes (synchronizacja na żywo między telefonami)
+-- Ustawienie REPLICA IDENTITY FULL zapobiega ucinaniu kolumn TOAST (JSONB ingredients/steps) przy aktualizacji is_favorite
+alter table public.recipes replica identity full;
+
 do $$
 begin
     if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
@@ -114,3 +119,7 @@ begin
     end if;
 end
 $$;
+
+-- 5. Bezpieczna migracja istniejących instancji bazy: dodanie kolumny powiązanych przepisów
+alter table public.recipes add column if not exists linked_recipes jsonb not null default '[]'::jsonb;
+

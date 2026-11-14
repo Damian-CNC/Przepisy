@@ -3,6 +3,7 @@ import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 import {
   createRecipe,
   deleteRecipeById,
+  extractLinkedRecipes,
   listRecipes,
   patchRecipe,
   replaceRecipeImage,
@@ -41,11 +42,47 @@ function sortRecipesByNewest(items: RecipeRow[]): RecipeRow[] {
   })
 }
 
+function sanitizeRecipeRow(row: RecipeRow): RecipeRow {
+  return {
+    ...row,
+    ingredients: Array.isArray(row.ingredients) ? row.ingredients : [],
+    steps: Array.isArray(row.steps) ? row.steps : [],
+    tags: Array.isArray(row.tags) ? row.tags : [],
+    linked_recipes: extractLinkedRecipes(row),
+  }
+}
+
 function upsertRecipeInList(list: RecipeRow[], incoming: RecipeRow): RecipeRow[] {
-  const exists = list.some((item) => item.id === incoming.id)
-  const next = exists
-    ? list.map((item) => (item.id === incoming.id ? incoming : item))
-    : [incoming, ...list]
+  const existing = list.find((item) => item.id === incoming.id)
+  const merged: RecipeRow = existing
+    ? {
+        ...existing,
+        ...incoming,
+        // Ochrona przed zjawiskiem PostgreSQL TOAST w Supabase Realtime:
+        // Przy aktualizacji tylko kolumny (np. is_favorite), kolumny jsonb/text[]
+        // mogą nie zostać przesłane i przyjść jako null/undefined.
+        ingredients:
+          Array.isArray(incoming.ingredients) && incoming.ingredients.length > 0
+            ? incoming.ingredients
+            : existing.ingredients ?? [],
+        steps:
+          Array.isArray(incoming.steps) && incoming.steps.length > 0
+            ? incoming.steps
+            : existing.steps ?? [],
+        tags:
+          Array.isArray(incoming.tags) && incoming.tags.length > 0
+            ? incoming.tags
+            : existing.tags ?? [],
+        linked_recipes:
+          Array.isArray(incoming.linked_recipes)
+            ? incoming.linked_recipes
+            : (existing.linked_recipes ?? extractLinkedRecipes(incoming)),
+      }
+    : sanitizeRecipeRow(incoming)
+
+  const next = existing
+    ? list.map((item) => (item.id === incoming.id ? merged : item))
+    : [merged, ...list]
   return sortRecipesByNewest(next)
 }
 
@@ -83,7 +120,7 @@ export function useRecipes(options: UseRecipesOptions = {}): UseRecipesResult {
 
     try {
       const data = await listRecipes()
-      setRecipes(sortRecipesByNewest(data))
+      setRecipes(sortRecipesByNewest(data.map(sanitizeRecipeRow)))
     } catch (err) {
       setError(toPolishErrorMessage(err, 'Nie udało się pobrać listy przepisów.'))
     } finally {
@@ -117,7 +154,7 @@ export function useRecipes(options: UseRecipesOptions = {}): UseRecipesResult {
       try {
         const data = await listRecipes()
         if (!isMounted) return
-        setRecipes(sortRecipesByNewest(data))
+        setRecipes(sortRecipesByNewest(data.map(sanitizeRecipeRow)))
       } catch (err) {
         if (!isMounted) return
         setError(toPolishErrorMessage(err, 'Nie udało się pobrać listy przepisów.'))

@@ -10,13 +10,10 @@ import {
   ChevronRight,
   Eye,
   Lightbulb,
-  Mic,
   Pause,
   Play,
   Plus,
   RotateCcw,
-  Sparkles,
-  Sun,
   Timer,
   X,
 } from 'lucide-react'
@@ -24,7 +21,6 @@ import { useCookingTimers, type CookingTimer } from '../../hooks/useCookingTimer
 import { useWakeLock } from '../../hooks/useWakeLock'
 import { formatScaledAmount } from '../../lib/recipesApi'
 import type { RecipeRow, RecipeStep, RecipeUpdate } from '../../lib/supabase'
-import { RecipeVoiceEditor } from '../recipes/RecipeVoiceEditor'
 import { AmbientBackground, GlassButton, GlassCard, GlassModal, GlassPill, cn } from '../ui'
 
 export interface CookingModeViewProps {
@@ -67,7 +63,7 @@ export function CookingModeView({
   recipe,
   targetServings,
   onExit,
-  onUpdateRecipe,
+  onUpdateRecipe: _onUpdateRecipe,
 }: CookingModeViewProps) {
   const steps = useMemo<RecipeStep[]>(() => recipe.steps ?? [], [recipe.steps])
   const totalSteps = steps.length
@@ -76,13 +72,12 @@ export function CookingModeView({
   const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const [slideDirection, setSlideDirection] = useState<1 | -1>(1)
   const [checkedIngredients, setCheckedIngredients] = useState<Record<string, boolean>>({})
-  const [isCompleted, setIsCompleted] = useState(false)
   const [isPreviewMode, setIsPreviewMode] = useState(false)
   const [pendingConfirmAction, setPendingConfirmAction] = useState<'next' | 'finish' | null>(null)
-  const [isVoiceEditorOpen, setIsVoiceEditorOpen] = useState(false)
+  const [timerAdjustments, setTimerAdjustments] = useState<Record<number, number>>({})
 
   const prefersReducedMotion = useReducedMotion()
-  const { isActive: isWakeLockActive } = useWakeLock(true)
+  useWakeLock(true)
   const {
     timers,
     startTimer,
@@ -101,6 +96,9 @@ export function CookingModeView({
   const currentStep = totalSteps > 0 ? steps[safeStepIndex] : null
   const isFirstStep = safeStepIndex === 0
   const isLastStep = totalSteps > 0 && safeStepIndex === totalSteps - 1
+
+  const baseStepSeconds = currentStep?.timer_seconds ?? 0
+  const effectiveTimerSeconds = Math.max(0, timerAdjustments[safeStepIndex] ?? baseStepSeconds)
 
   const islandTimers = useMemo(
     () =>
@@ -135,7 +133,6 @@ export function CookingModeView({
       if (clamped === safeStepIndex) return
       setSlideDirection(clamped > safeStepIndex ? 1 : -1)
       setCurrentStepIndex(clamped)
-      setIsCompleted(false)
       window.scrollTo({ top: 0, behavior: prefersReducedMotion ? 'auto' : 'smooth' })
     },
     [prefersReducedMotion, safeStepIndex, totalSteps],
@@ -154,18 +151,6 @@ export function CookingModeView({
       .filter((item) => !checkedIngredients[item.key])
   }, [baseServings, checkedIngredients, currentStep, safeStepIndex, targetServings])
 
-  const completeRecipe = useCallback(() => {
-    setIsCompleted(true)
-    if (!prefersReducedMotion) {
-      void confetti({
-        particleCount: 95,
-        spread: 75,
-        origin: { y: 0.72 },
-        disableForReducedMotion: true,
-      })
-    }
-  }, [prefersReducedMotion])
-
   const handlePrevious = useCallback(() => {
     if (!isFirstStep) {
       setPendingConfirmAction(null)
@@ -178,10 +163,18 @@ export function CookingModeView({
       if (action === 'next' && !isLastStep) {
         goToStep(safeStepIndex + 1)
       } else if (action === 'finish') {
-        completeRecipe()
+        if (!prefersReducedMotion) {
+          void confetti({
+            particleCount: 85,
+            spread: 75,
+            origin: { y: 0.65 },
+            disableForReducedMotion: true,
+          })
+        }
+        handleExit()
       }
     },
-    [completeRecipe, goToStep, isLastStep, safeStepIndex],
+    [goToStep, handleExit, isLastStep, prefersReducedMotion, safeStepIndex],
   )
 
   const handleNext = useCallback(() => {
@@ -194,12 +187,20 @@ export function CookingModeView({
   }, [goToStep, isLastStep, isPreviewMode, safeStepIndex, uncheckedStepIngredients.length])
 
   const handleFinishRecipe = useCallback(() => {
-    if (!isCompleted && !isPreviewMode && uncheckedStepIngredients.length > 0) {
+    if (!isPreviewMode && uncheckedStepIngredients.length > 0) {
       setPendingConfirmAction('finish')
       return
     }
-    completeRecipe()
-  }, [completeRecipe, isCompleted, isPreviewMode, uncheckedStepIngredients.length])
+    if (!prefersReducedMotion) {
+      void confetti({
+        particleCount: 85,
+        spread: 75,
+        origin: { y: 0.65 },
+        disableForReducedMotion: true,
+      })
+    }
+    handleExit()
+  }, [handleExit, isPreviewMode, prefersReducedMotion, uncheckedStepIngredients.length])
 
   const handleConfirmUncheckedAdvance = useCallback(() => {
     const action = pendingConfirmAction
@@ -238,7 +239,7 @@ export function CookingModeView({
   // Keyboard navigation: ArrowLeft / ArrowRight / Escape
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (pendingConfirmAction !== null || isVoiceEditorOpen) return
+      if (pendingConfirmAction !== null) return
       if (event.altKey || event.ctrlKey || event.metaKey) return
       const target = event.target
       if (
@@ -269,7 +270,7 @@ export function CookingModeView({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleExit, handleNext, handlePrevious, isVoiceEditorOpen, pendingConfirmAction])
+  }, [handleExit, handleNext, handlePrevious, pendingConfirmAction])
 
   const handlePointerDown = (event: React.PointerEvent<HTMLElement>) => {
     if (event.button !== 0 || isInteractiveSwipeTarget(event.target)) {
@@ -325,21 +326,6 @@ export function CookingModeView({
           >
             Zakończ
           </GlassButton>
-
-          {isWakeLockActive && (
-            <GlassPill
-              variant="tag"
-              size="sm"
-              leftIcon={
-                <Sun
-                  className="size-3.5 text-emerald-700 dark:text-emerald-400"
-                  aria-hidden="true"
-                />
-              }
-            >
-              Ekran nie zgaśnie
-            </GlassPill>
-          )}
         </header>
 
         <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center justify-center px-4 pb-[max(2rem,env(safe-area-inset-bottom))] sm:px-6">
@@ -391,7 +377,7 @@ export function CookingModeView({
       {/* Górny pasek postępu i statusu (z zapasem poniżej Dynamic Island na iPhone) */}
       <header className="sticky top-0 z-30 border-b border-white/40 bg-[#fbf8f3]/75 backdrop-blur-2xl backdrop-saturate-150 dark:border-white/10 dark:bg-zinc-950/75">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] pb-3 sm:px-6">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-3">
             <GlassButton
               variant="secondary"
               size="md"
@@ -402,75 +388,37 @@ export function CookingModeView({
               Zakończ
             </GlassButton>
 
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {isWakeLockActive && (
-                <GlassPill
-                  variant="tag"
-                  size="sm"
-                  leftIcon={
-                    <Sun
-                      className="size-3.5 text-emerald-700 dark:text-emerald-400"
-                      aria-hidden="true"
-                    />
-                  }
-                >
-                  <span className="hidden sm:inline">Ekran nie zgaśnie</span>
-                  <span className="sm:hidden">Czuwa</span>
-                </GlassPill>
-              )}
-
-              <GlassPill
-                as="button"
-                variant={isPreviewMode ? 'active' : 'surface'}
-                size="sm"
-                aria-pressed={isPreviewMode}
-                aria-label={
-                  isPreviewMode
-                    ? 'Wyłącz tryb podglądu (sprawdzaj składniki)'
-                    : 'Włącz tryb podglądu (przeklikaj kroki bez odhaczania składników)'
-                }
-                leftIcon={<Eye className="size-3.5" aria-hidden="true" />}
-                onClick={() => setIsPreviewMode((prev) => !prev)}
-                className="min-h-11 px-3 text-xs font-semibold sm:text-sm"
-              >
-                {isPreviewMode ? 'Podgląd wł.' : 'Podgląd'}
-              </GlassPill>
-
-              {onUpdateRecipe && (
-                <GlassButton
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  aria-label="Edytuj przepis z AI"
-                  onClick={() => setIsVoiceEditorOpen(true)}
-                  leftIcon={
-                    <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300">
-                      <Mic className="size-3.5" aria-hidden="true" />
-                      <Sparkles className="size-3.5" aria-hidden="true" />
-                    </span>
-                  }
-                  className="min-h-11 rounded-full px-3.5 text-xs font-semibold sm:text-sm"
-                >
-                  Edytuj z AI
-                </GlassButton>
-              )}
-
-              <GlassPill variant="surface" size="sm">
-                <span className="font-semibold text-stone-900 tabular-nums dark:text-stone-50">
-                  Krok {safeStepIndex + 1} z {totalSteps}
-                </span>
-              </GlassPill>
-            </div>
+            <GlassButton
+              type="button"
+              variant={isPreviewMode ? 'primary' : 'secondary'}
+              size="md"
+              aria-pressed={isPreviewMode}
+              aria-label={
+                isPreviewMode
+                  ? 'Wyłącz tryb podglądu (sprawdzaj składniki)'
+                  : 'Włącz tryb podglądu (przeklikaj kroki bez odhaczania składników)'
+              }
+              leftIcon={<Eye className="size-4" aria-hidden="true" />}
+              onClick={() => setIsPreviewMode((prev) => !prev)}
+              className="min-h-11"
+            >
+              {isPreviewMode ? 'Podgląd wł.' : 'Podgląd'}
+            </GlassButton>
           </div>
 
           <div className="flex items-baseline justify-between gap-3">
             <h1 className="min-w-0 truncate text-base font-semibold tracking-tight text-stone-900 sm:text-lg dark:text-stone-50">
               {recipe.title}
             </h1>
-            <span className="shrink-0 text-xs font-medium text-stone-600 tabular-nums dark:text-stone-300">
-              {targetServings}{' '}
-              {targetServings === 1 ? 'porcja' : targetServings < 5 ? 'porcje' : 'porcji'}
-            </span>
+            <div className="flex shrink-0 items-center gap-2 text-xs font-semibold text-stone-600 tabular-nums dark:text-stone-300">
+              <span className="rounded-full bg-stone-900/5 px-2.5 py-0.5 dark:bg-white/10">
+                Krok {safeStepIndex + 1} z {totalSteps}
+              </span>
+              <span>
+                {targetServings}{' '}
+                {targetServings === 1 ? 'porcja' : targetServings < 5 ? 'porcje' : 'porcji'}
+              </span>
+            </div>
           </div>
 
           {/* Płynny pasek postępu */}
@@ -676,7 +624,7 @@ export function CookingModeView({
                 </span>
               </div>
 
-              {currentStep.timer_seconds > 0 && (
+              {effectiveTimerSeconds > 0 && (
                 <GlassPill
                   variant="tag"
                   size="sm"
@@ -688,7 +636,7 @@ export function CookingModeView({
                   }
                 >
                   <span className="tabular-nums">
-                    Czas kroku: {formatCountdown(currentStep.timer_seconds)}
+                    Czas kroku: {formatCountdown(effectiveTimerSeconds)}
                   </span>
                 </GlassPill>
               )}
@@ -807,7 +755,7 @@ export function CookingModeView({
             )}
 
             {/* 3. Kompaktowa sekcja Minutnika kroku */}
-            {currentStep.timer_seconds > 0 && (
+            {effectiveTimerSeconds > 0 && (
               <section aria-labelledby="step-timer-heading" data-no-swipe="true">
                 <GlassCard
                   variant="default"
@@ -830,24 +778,54 @@ export function CookingModeView({
                         <span>Minutnik kroku {currentStep.step_number}</span>
                       </h2>
 
-                      <GlassButton
-                        variant="primary"
-                        size="sm"
-                        leftIcon={<Play className="size-3.5 fill-current" aria-hidden="true" />}
-                        onClick={() =>
-                          startTimer(
-                            safeStepIndex,
-                            currentStep.step_number,
-                            `Krok ${currentStep.step_number}`,
-                            currentStep.timer_seconds,
-                          )
-                        }
-                        className="min-h-9 px-3.5"
-                      >
-                        <span className="tabular-nums">
-                          Start ({formatCountdown(currentStep.timer_seconds)})
-                        </span>
-                      </GlassButton>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          aria-label="Odejmij 1 minutę"
+                          disabled={effectiveTimerSeconds <= 60}
+                          onClick={() =>
+                            setTimerAdjustments((prev) => ({
+                              ...prev,
+                              [safeStepIndex]: Math.max(60, effectiveTimerSeconds - 60),
+                            }))
+                          }
+                          className="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg border border-stone-900/10 bg-white/50 text-xs font-semibold text-stone-700 transition hover:bg-white/80 disabled:opacity-35 dark:border-white/10 dark:bg-white/10 dark:text-stone-200"
+                        >
+                          -1m
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Dodaj 1 minutę"
+                          onClick={() =>
+                            setTimerAdjustments((prev) => ({
+                              ...prev,
+                              [safeStepIndex]: effectiveTimerSeconds + 60,
+                            }))
+                          }
+                          className="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg border border-stone-900/10 bg-white/50 text-xs font-semibold text-stone-700 transition hover:bg-white/80 dark:border-white/10 dark:bg-white/10 dark:text-stone-200"
+                        >
+                          +1m
+                        </button>
+
+                        <GlassButton
+                          variant="primary"
+                          size="sm"
+                          leftIcon={<Play className="size-3.5 fill-current" aria-hidden="true" />}
+                          onClick={() =>
+                            startTimer(
+                              safeStepIndex,
+                              currentStep.step_number,
+                              `Krok ${currentStep.step_number}`,
+                              effectiveTimerSeconds,
+                            )
+                          }
+                          className="min-h-9 px-3.5"
+                        >
+                          <span className="tabular-nums">
+                            Start ({formatCountdown(effectiveTimerSeconds)})
+                          </span>
+                        </GlassButton>
+                      </div>
                     </div>
                   ) : (
                     <div className="flex flex-wrap items-center justify-between gap-2.5">
@@ -947,46 +925,6 @@ export function CookingModeView({
               </section>
             )}
 
-            {/* Karta gratulacji po zakończeniu ostatniego kroku */}
-            {isLastStep && isCompleted && (
-              <motion.section
-                aria-label="Gratulacje"
-                initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ type: 'spring', stiffness: 360, damping: 28 }}
-              >
-                <GlassCard
-                  variant="elevated"
-                  padding="lg"
-                  className="border-emerald-500/45 bg-emerald-500/12 dark:border-emerald-400/35 dark:bg-emerald-500/15"
-                >
-                  <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-start gap-3">
-                      <div className="inline-flex size-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-600 text-white dark:bg-emerald-500 dark:text-zinc-950">
-                        <Sparkles className="size-6" aria-hidden="true" />
-                      </div>
-                      <div className="space-y-1">
-                        <h2 className="text-xl font-semibold text-stone-900 dark:text-stone-50">
-                          Brawo! Danie gotowe — smacznego!
-                        </h2>
-                        <p className="text-base text-stone-700 dark:text-stone-200">
-                          Wszystkie {totalSteps} kroków dla „{recipe.title}” zostały ukończone.
-                        </p>
-                      </div>
-                    </div>
-
-                    <GlassButton
-                      variant="primary"
-                      size="md"
-                      onClick={handleExit}
-                      className="min-h-11 w-full shrink-0 sm:w-auto"
-                    >
-                      Wróć do przepisu
-                    </GlassButton>
-                  </div>
-                </GlassCard>
-              </motion.section>
-            )}
           </motion.div>
         </AnimatePresence>
       </main>
@@ -1015,7 +953,7 @@ export function CookingModeView({
               onClick={handleFinishRecipe}
               className="h-14 !min-h-14 rounded-2xl px-4 py-2 text-sm font-semibold sm:text-base"
             >
-              Gotowe! Smacznego 🎉
+              Gotowe
             </GlassButton>
           ) : (
             <GlassButton
@@ -1082,16 +1020,6 @@ export function CookingModeView({
           ))}
         </ul>
       </GlassModal>
-
-      {onUpdateRecipe && (
-        <RecipeVoiceEditor
-          recipe={recipe}
-          isOpen={isVoiceEditorOpen}
-          onOpenChange={setIsVoiceEditorOpen}
-          onApplyChanges={onUpdateRecipe}
-          hideFloatingTrigger
-        />
-      )}
     </div>
   )
 }

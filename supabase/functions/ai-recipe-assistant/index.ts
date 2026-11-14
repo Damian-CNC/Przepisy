@@ -383,7 +383,55 @@ async function tryGenerateFoodCoverWithGemini(
     category ? ` (${category})` : ""
   }.${description ? ` Context: ${description}.` : ""} Warm natural kitchen daylight, appetizing plated homemade food, shallow depth of field, high detail, photorealistic, no text, no watermarks, no logos.`;
 
-  const imageModels = ["gemini-2.5-flash-image", "gemini-2.0-flash-exp-image-generation"];
+  // 1. Spróbuj Imagen 3 (standardowy dedykowany model generowania obrazów w Google AI Studio)
+  try {
+    const imagenRes = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": geminiApiKey,
+        },
+        body: JSON.stringify({
+          instances: [{ prompt }],
+          parameters: {
+            sampleCount: 1,
+            aspectRatio: "4:3",
+            outputMimeType: "image/jpeg",
+          },
+        }),
+        signal: AbortSignal.timeout(18000),
+      },
+    );
+
+    if (imagenRes.ok) {
+      const json = (await imagenRes.json()) as {
+        predictions?: Array<{
+          bytesBase64Encoded?: string;
+          mimeType?: string;
+        }>;
+      };
+      const prediction = json.predictions?.[0];
+      if (prediction?.bytesBase64Encoded) {
+        const mimeType = prediction.mimeType || "image/jpeg";
+        const bytes = decodeBase64ToUint8Array(prediction.bytesBase64Encoded);
+        const uploaded = await uploadBytesToSupabaseStorage(
+          supabaseUrl,
+          supabaseServiceKey,
+          bytes,
+          mimeType,
+          "generated",
+        );
+        if (uploaded) return uploaded;
+      }
+    }
+  } catch (err) {
+    console.warn("Generowanie obrazu Imagen 3 nie powiodło się, sprawdzam fallback:", err);
+  }
+
+  // 2. Fallback: multimodalne modele generujące obraz przez generateContent
+  const fallbackImageModels = ["gemini-2.0-flash-exp", "gemini-2.0-flash"];
   const body = JSON.stringify({
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: {
@@ -392,7 +440,7 @@ async function tryGenerateFoodCoverWithGemini(
     },
   });
 
-  for (const modelName of imageModels) {
+  for (const modelName of fallbackImageModels) {
     try {
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
@@ -505,33 +553,45 @@ async function searchWebRecipePhotosViaGrounding(
   if (!cleanTitle) return null;
 
   try {
-    const res = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": geminiApiKey,
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [
+    const groundingModels = ["gemini-3.8-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+    let json: GeminiApiResponse | null = null;
+
+    for (const modelName of groundingModels) {
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": geminiApiKey,
+            },
+            body: JSON.stringify({
+              contents: [
                 {
-                  text: `Znajdź najpopularniejsze sprawdzone przepisy ze zdjęciem na potrawę: "${cleanTitle}".`,
+                  role: "user",
+                  parts: [
+                    {
+                      text: `Znajdź najpopularniejsze sprawdzone przepisy ze zdjęciem na potrawę: "${cleanTitle}".`,
+                    },
+                  ],
                 },
               ],
-            },
-          ],
-          tools: [{ google_search: {} }],
-        }),
-        signal: AbortSignal.timeout(9000),
-      },
-    );
-    if (!res.ok) return null;
+              tools: [{ google_search: {} }],
+            }),
+            signal: AbortSignal.timeout(9000),
+          },
+        );
+        if (res.ok) {
+          json = (await res.json()) as GeminiApiResponse;
+          break;
+        }
+      } catch {
+        continue;
+      }
+    }
 
-    const json = (await res.json()) as GeminiApiResponse;
+    if (!json) return null;
     const pageUrls = Array.from(
       new Set(
         (json.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [])
@@ -659,6 +719,48 @@ async function generateAndUploadFoodCover(params: {
   );
 }
 
+function sanitizeStepTimer(instruction: string, reportedSeconds: unknown): number {
+  const safeSeconds = Math.max(0, Math.round(Number(reportedSeconds) || 0));
+  if (!instruction || typeof instruction !== "string") return safeSeconds;
+
+  const clean = instruction.toLowerCase();
+
+  // Wzorzec na minuty: np. "odstaw na 10 minut", "10 min", "25 minut", "15-20 minut"
+  const minuteMatch = clean.match(
+    /(?:odstaw|piecz|gotuj|smaż|wyrastaj|duś|miksuj|studź|czekaj|pozostaw)?\s*(?:na|przez|ok\.?|około)?\s*(\d+(?:[.,]\d+)?)\s*(?:-|do)?\s*(?:\d+(?:[.,]\d+)?)?\s*(minut[yęa]?|min\b)/i,
+  );
+  if (minuteMatch) {
+    const rawNum = parseFloat(minuteMatch[1].replace(",", "."));
+    if (Number.isFinite(rawNum) && rawNum > 0) {
+      const expectedSeconds = Math.round(rawNum * 60);
+      if (
+        safeSeconds === 0 ||
+        safeSeconds === Math.round(rawNum) ||
+        (rawNum >= 2 && safeSeconds === 60) ||
+        Math.abs(safeSeconds - expectedSeconds) > 60
+      ) {
+        return expectedSeconds;
+      }
+    }
+  }
+
+  // Wzorzec na godziny: np. "1 godzina", "2 godziny", "1.5 godz"
+  const hourMatch = clean.match(
+    /(\d+(?:[.,]\d+)?)\s*(?:-|do)?\s*(?:\d+(?:[.,]\d+)?)?\s*(godzin[yęa]?|godz\b|h\b)/i,
+  );
+  if (hourMatch) {
+    const rawNum = parseFloat(hourMatch[1].replace(",", "."));
+    if (Number.isFinite(rawNum) && rawNum > 0) {
+      const expectedSeconds = Math.round(rawNum * 3600);
+      if (safeSeconds === 0 || safeSeconds < expectedSeconds * 0.5) {
+        return expectedSeconds;
+      }
+    }
+  }
+
+  return safeSeconds;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -741,7 +843,13 @@ Deno.serve(async (req: Request) => {
     const configuredModel = (Deno.env.get("GEMINI_MODEL") || "").trim();
     const candidateModels = Array.from(
       new Set(
-        [configuredModel, "gemini-2.5-flash", "gemini-flash-latest"].filter(Boolean),
+        [
+          configuredModel,
+          "gemini-3.8-flash",
+          "gemini-2.0-flash",
+          "gemini-1.5-flash",
+          "gemini-flash-latest",
+        ].filter(Boolean),
       ),
     );
 
@@ -795,7 +903,8 @@ ZASADY OBOWIĄZKOWE:
 4. KRYTYCZNE — OBOWIĄZKOWY PODZIAŁ NA PÓŁWYROBY (SEKCJE): Każdy składnik w "ingredients" MUSI mieć wypełnione pole "category" nazwą półwyrobu/etapu (NIGDY puste!). Nawet jeśli źródłowy przepis ma jedną płaską listę, podziel składniki według kroków przygotowania (np. "Zaparka", "Ciasto główne", "Farsz", "Sos", "Posmarowanie i wykończenie", "Baza", "Dodatki"). Jeśli składnik pojawia się w dwóch etapach (np. mleko lub mąka w Zaparce i w Cieście), wypisz go osobno w obu sekcjach.
 5. Podziel przygotowanie na logiczne kroki w stylu Thermomix, numerując "step_number" kolejno od 1 (1, 2, 3...).
 6. W każdym kroku w "step_ingredients" wypisz DOKŁADNIE te składniki i ich ilości (w gramach!), które są używane/dodawane w tym kroku.
-7. W "timer_seconds" podaj czas odliczania w sekundach dla kroków wymagających gotowania, pieczenia, smażenia lub odstawienia (np. 10 min = 600). Jeśli brak czasu, wpisz 0.
+7. W "timer_seconds" podaj DOKŁADNY czas odliczania w SEKUNDACH dla kroków wymagających pieczenia, gotowania, duszenia, wyrastania lub odstawienia.
+   KRYTYCZNA ZASADA: ZAWSZE mnóż minuty razy 60! Przykłady: "10 minut" = 600 sekund (10 * 60 = 600, NIGDY nie wpisuj 60 ani 10!). "25 minut" = 1500 sekund. "5 minut" = 300 sekund. Jeśli brak czasu oczekiwania, wpisz 0.
 
 ZAPYTANIE UŻYTKOWNIKA:
 ${userPrompt}
@@ -839,9 +948,23 @@ ${webContext ? `\nMATERIAŁ ŹRÓDŁOWY Z SIECI:\n${webContext.slice(0, 14000)}`
           })
         : null;
 
+      const rawSteps = Array.isArray(parsedRecipe.steps) ? parsedRecipe.steps : [];
+      const sanitizedSteps = rawSteps.map((step, idx) => {
+        if (!step || typeof step !== "object") return step;
+        const s = step as Record<string, unknown>;
+        const instruction = typeof s.instruction === "string" ? s.instruction : "";
+        const timerSeconds = sanitizeStepTimer(instruction, s.timer_seconds);
+        return {
+          ...s,
+          step_number: idx + 1,
+          timer_seconds: timerSeconds,
+        };
+      });
+
       return jsonResponse({
         recipe: {
           ...parsedRecipe,
+          steps: sanitizedSteps,
           source_url: sourceUrl,
           source_platform: useWebSearch ? "web" : "ai",
           image_url: generatedImageUrl,
@@ -897,10 +1020,24 @@ ${userPrompt}
 
     const updatedRecipe = JSON.parse(editResult.text) as Record<string, unknown>;
 
+    const rawSteps = Array.isArray(updatedRecipe.steps) ? updatedRecipe.steps : [];
+    const sanitizedSteps = rawSteps.map((step, idx) => {
+      if (!step || typeof step !== "object") return step;
+      const s = step as Record<string, unknown>;
+      const instruction = typeof s.instruction === "string" ? s.instruction : "";
+      const timerSeconds = sanitizeStepTimer(instruction, s.timer_seconds);
+      return {
+        ...s,
+        step_number: idx + 1,
+        timer_seconds: timerSeconds,
+      };
+    });
+
     return jsonResponse({
       recipe: {
         ...currentRecipe,
         ...updatedRecipe,
+        steps: sanitizedSteps,
         id: currentRecipe.id,
         created_at: currentRecipe.created_at,
         image_url: currentRecipe.image_url,

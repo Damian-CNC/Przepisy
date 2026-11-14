@@ -33,7 +33,12 @@ export type RecipeStep = {
   tip?: string | null
 }
 
-export type RecipeNutrition = Record<string, number | string> | null
+export type RecipeNutrition = Record<string, unknown> | null
+
+export interface LinkedRecipeItem {
+  recipe_id: string
+  label: string
+}
 
 export type RecipeRow = {
   id: string
@@ -54,6 +59,7 @@ export type RecipeRow = {
   steps: RecipeStep[]
   nutrition: RecipeNutrition
   created_by: string | null
+  linked_recipes?: LinkedRecipeItem[] | null
 }
 
 export type RecipeInsert = {
@@ -75,6 +81,7 @@ export type RecipeInsert = {
   steps?: RecipeStep[]
   nutrition?: RecipeNutrition
   created_by?: string | null
+  linked_recipes?: LinkedRecipeItem[] | null
 }
 
 export type RecipeUpdate = Partial<RecipeInsert>

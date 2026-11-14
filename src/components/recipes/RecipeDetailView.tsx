@@ -3,6 +3,7 @@ import { motion, useReducedMotion, useScroll, useTransform } from 'framer-motion
 import {
   AlertCircle,
   ArrowLeft,
+  ArrowRight,
   ChefHat,
   Clock,
   ExternalLink,
@@ -11,7 +12,9 @@ import {
   Heart,
   ImagePlus,
   Lightbulb,
+  Link2,
   Minus,
+  Pencil,
   Play,
   Plus,
   Sparkles,
@@ -20,6 +23,7 @@ import {
   Users,
 } from 'lucide-react'
 import {
+  extractLinkedRecipes,
   formatScaledAmount,
   generateRecipeCoverImage,
   groupIngredientsBySection,
@@ -27,12 +31,17 @@ import {
 } from '../../lib/recipesApi'
 import type { RecipeRow, RecipeUpdate } from '../../lib/supabase'
 import { GlassButton, GlassCard, GlassModal, GlassPill, cn } from '../ui'
+import { LinkedRecipesModal } from './LinkedRecipesModal'
 import { RecipeVoiceEditor } from './RecipeVoiceEditor'
 import { formatTimerLabel, getSourceMeta } from './recipeMeta'
+import { useWakeLock } from '../../hooks/useWakeLock'
 
 export interface RecipeDetailViewProps {
   recipe: RecipeRow
+  allRecipes: RecipeRow[]
   onBack: () => void
+  onSelectRecipe?: (id: string) => void
+  hasPreviousRecipe?: boolean
   onToggleFavorite: (id: string) => void | Promise<unknown>
   onUpdatePhoto: (id: string, file: File) => Promise<RecipeRow>
   onUpdateRecipe: (id: string, payload: RecipeUpdate) => Promise<RecipeRow>
@@ -50,13 +59,21 @@ function supportsCssScrollDrivenParallax(): boolean {
  */
 export function RecipeDetailView({
   recipe,
+  allRecipes,
   onBack,
+  onSelectRecipe,
+  hasPreviousRecipe = false,
   onToggleFavorite,
   onUpdatePhoto,
   onUpdateRecipe,
   onRemoveRecipe,
   onStartCooking,
 }: RecipeDetailViewProps) {
+  useWakeLock(true)
+
+  const ingredients = Array.isArray(recipe.ingredients) ? recipe.ingredients : []
+  const steps = Array.isArray(recipe.steps) ? recipe.steps : []
+
   const baseServings = recipe.servings && recipe.servings > 0 ? recipe.servings : 2
   const [targetServings, setTargetServings] = useState<number>(baseServings)
   const [isUpdatingPhoto, setIsUpdatingPhoto] = useState(false)
@@ -67,6 +84,9 @@ export function RecipeDetailView({
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [isVoiceEditorOpen, setIsVoiceEditorOpen] = useState(false)
+  const [isLinkedModalOpen, setIsLinkedModalOpen] = useState(false)
+
+  const linkedRecipes = extractLinkedRecipes(recipe)
 
   const photoInputRef = useRef<HTMLInputElement>(null)
   const heroWrapperRef = useRef<HTMLDivElement>(null)
@@ -243,10 +263,25 @@ export function RecipeDetailView({
             onClick={onBack}
             className="border-white/30 bg-zinc-950/65 text-white hover:bg-zinc-950/80 dark:border-white/25 dark:bg-zinc-950/70 dark:text-white"
           >
-            Przepisy
+            {hasPreviousRecipe ? 'Wróć' : 'Przepisy'}
           </GlassButton>
 
           <div className="flex items-center gap-2">
+            <GlassButton
+              variant="secondary"
+              size="md"
+              leftIcon={<Link2 className="size-4 text-amber-300" aria-hidden="true" />}
+              onClick={() => setIsLinkedModalOpen(true)}
+              className="border-white/30 bg-zinc-950/65 text-white hover:bg-zinc-950/80 dark:border-white/25 dark:bg-zinc-950/70 dark:text-white"
+            >
+              <span className="hidden sm:inline">
+                {linkedRecipes.length > 0 ? `Powiązania (${linkedRecipes.length})` : 'Powiąż przepis'}
+              </span>
+              <span className="sm:hidden">
+                {linkedRecipes.length > 0 ? `🔗 ${linkedRecipes.length}` : 'Powiąż'}
+              </span>
+            </GlassButton>
+
             <input
               ref={photoInputRef}
               type="file"
@@ -446,6 +481,131 @@ export function RecipeDetailView({
           </div>
         </GlassCard>
 
+        {/* Sekcja powiązanych przepisów (np. "Najlepiej podawać z: Chlebki naan") */}
+        {linkedRecipes.length > 0 ? (
+          <div className="space-y-3">
+            {linkedRecipes.map((link, idx) => {
+              const target = allRecipes.find((r) => r.id === link.recipe_id)
+              if (!target) return null
+              const prep =
+                typeof target.prep_time_minutes === 'number'
+                  ? Math.max(0, target.prep_time_minutes)
+                  : 0
+              const cook =
+                typeof target.cook_time_minutes === 'number'
+                  ? Math.max(0, target.cook_time_minutes)
+                  : 0
+              const targetTime = prep + cook
+
+              return (
+                <GlassCard
+                  key={`${link.recipe_id}-${idx}`}
+                  variant="elevated"
+                  padding="md"
+                  className="space-y-2.5 overflow-hidden"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold tracking-wider text-amber-800 uppercase dark:text-amber-300">
+                      {link.label || 'Najlepiej podawać z:'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsLinkedModalOpen(true)}
+                      className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-stone-500 transition-colors hover:text-amber-700 dark:text-stone-400 dark:hover:text-amber-300"
+                    >
+                      <Pencil className="size-3" aria-hidden="true" />
+                      <span>Edytuj powiązanie</span>
+                    </button>
+                  </div>
+
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onSelectRecipe?.(target.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        onSelectRecipe?.(target.id)
+                      }
+                    }}
+                    className={cn(
+                      'group flex cursor-pointer items-center justify-between gap-3.5 rounded-2xl p-3',
+                      'border border-stone-900/10 bg-white/70 backdrop-blur-xl',
+                      'transition-all duration-200 hover:border-amber-500/40 hover:bg-white/90 hover:shadow-md',
+                      'dark:border-white/10 dark:bg-zinc-900/70 dark:hover:border-amber-400/40 dark:hover:bg-zinc-800/80',
+                      'focus-visible:outline-2 focus-visible:outline-amber-600 dark:focus-visible:outline-amber-400',
+                    )}
+                  >
+                    <div className="flex min-w-0 items-center gap-3.5">
+                      <div className="relative size-16 shrink-0 overflow-hidden rounded-xl bg-amber-500/10">
+                        {target.image_url ? (
+                          <img
+                            src={target.image_url}
+                            alt={target.title}
+                            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center">
+                            <ChefHat className="size-7 text-amber-700/40 dark:text-amber-300/40" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="min-w-0">
+                        {target.category && (
+                          <span className="text-[11px] font-semibold tracking-wider text-amber-700 uppercase dark:text-amber-400">
+                            {target.category}
+                          </span>
+                        )}
+                        <h3 className="truncate text-base font-semibold text-stone-900 transition-colors group-hover:text-amber-800 dark:text-stone-50 dark:group-hover:text-amber-300">
+                          {target.title}
+                        </h3>
+                        <div className="mt-0.5 flex items-center gap-2 text-xs text-stone-600 dark:text-stone-300">
+                          {targetTime > 0 && (
+                            <span className="flex items-center gap-1">
+                              <Clock className="size-3 text-amber-600 dark:text-amber-400" />
+                              {targetTime} min
+                            </span>
+                          )}
+                          {Array.isArray(target.ingredients) && target.ingredients.length > 0 && (
+                            <span>• {target.ingredients.length} składników</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-1.5 pr-1 text-xs font-semibold text-amber-700 transition-transform group-hover:translate-x-0.5 dark:text-amber-400">
+                      <span>Zobacz przepis</span>
+                      <ArrowRight className="size-4" aria-hidden="true" />
+                    </div>
+                  </div>
+                </GlassCard>
+              )
+            })}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setIsLinkedModalOpen(true)}
+            className={cn(
+              'flex w-full cursor-pointer items-center justify-between gap-3 rounded-2xl p-3.5 text-left text-sm font-medium',
+              'border border-dashed border-stone-900/20 bg-white/40 backdrop-blur-xl',
+              'text-stone-600 transition-colors hover:border-amber-500/50 hover:bg-white/70 hover:text-amber-800',
+              'dark:border-white/15 dark:bg-white/5 dark:text-stone-300 dark:hover:border-amber-400/50 dark:hover:bg-white/10 dark:hover:text-amber-300',
+            )}
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-400">
+                <Link2 className="size-4" />
+              </div>
+              <span>Podepnij pasujący przepis (np. chlebki naan, sos, surówka)</span>
+            </div>
+            <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+              + Podepnij
+            </span>
+          </button>
+        )}
+
         {/* Siatka: Składniki + Kroki w stylu Thermomix */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-start">
           {/* Pełna lista składników */}
@@ -465,13 +625,13 @@ export function RecipeDetailView({
                 </GlassPill>
               </div>
 
-              {recipe.ingredients.length === 0 ? (
+              {ingredients.length === 0 ? (
                 <p className="text-sm text-stone-600 dark:text-stone-300">
                   Ten przepis nie ma jeszcze zapisanej listy składników.
                 </p>
               ) : (
                 <div className="space-y-5">
-                  {groupIngredientsBySection(recipe.ingredients).map((group, groupIdx) => (
+                  {groupIngredientsBySection(ingredients).map((group, groupIdx) => (
                     <div
                       key={group.section ?? `group-${groupIdx}`}
                       className={cn(
@@ -528,11 +688,11 @@ export function RecipeDetailView({
                 Przygotowanie krok po kroku
               </h2>
               <span className="text-sm font-medium text-stone-600 tabular-nums dark:text-stone-300">
-                {recipe.steps.length} {recipe.steps.length === 1 ? 'krok' : 'kroków'}
+                {steps.length} {steps.length === 1 ? 'krok' : 'kroków'}
               </span>
             </div>
 
-            {recipe.steps.length === 0 ? (
+            {steps.length === 0 ? (
               <GlassCard variant="default" padding="md">
                 <p className="text-sm text-stone-600 dark:text-stone-300">
                   Brak zapisanych kroków przygotowania dla tego przepisu.
@@ -540,7 +700,7 @@ export function RecipeDetailView({
               </GlassCard>
             ) : (
               <ol className="space-y-4">
-                {recipe.steps.map((step) => {
+                {steps.map((step) => {
                   const timerLabel = formatTimerLabel(step.timer_seconds)
                   return (
                     <li key={step.step_number}>
@@ -623,6 +783,7 @@ export function RecipeDetailView({
         isOpen={isVoiceEditorOpen}
         onOpenChange={setIsVoiceEditorOpen}
         onApplyChanges={handleApplyVoiceChanges}
+        onOpenLinkedRecipesModal={() => setIsLinkedModalOpen(true)}
       />
 
       {/* Pływający przycisk na dole ekranu (Thumb Zone) */}
@@ -731,6 +892,17 @@ export function RecipeDetailView({
           </div>
         )}
       </GlassModal>
+
+      {/* Modal zarządzania powiązanymi przepisami */}
+      <LinkedRecipesModal
+        isOpen={isLinkedModalOpen}
+        onClose={() => setIsLinkedModalOpen(false)}
+        recipe={recipe}
+        allRecipes={allRecipes}
+        onSave={async (newLinks) => {
+          await onUpdateRecipe(recipe.id, { linked_recipes: newLinks })
+        }}
+      />
     </div>
   )
 }

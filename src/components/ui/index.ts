@@ -24,3 +24,4 @@ export {
   type GlassPillSize,
   type GlassPillVariant,
 } from './GlassPill'
+export { ErrorBoundary } from './ErrorBoundary'

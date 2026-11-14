@@ -82,6 +82,7 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedFilter, setSelectedFilter] = useState<FilterOption>('Wszystkie')
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null)
+  const [recipeHistory, setRecipeHistory] = useState<string[]>([])
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
@@ -169,10 +170,12 @@ export function App() {
       const inTitle = recipe.title.toLowerCase().includes(query)
       const inDescription = (recipe.description ?? '').toLowerCase().includes(query)
       const inCategory = (recipe.category ?? '').toLowerCase().includes(query)
-      const inTags = (recipe.tags ?? []).some((tag) => tag.toLowerCase().includes(query))
-      const inIngredients = recipe.ingredients.some((ing) =>
-        ing.name.toLowerCase().includes(query),
-      )
+      const inTags =
+        Array.isArray(recipe.tags) &&
+        recipe.tags.some((tag) => (tag ?? '').toLowerCase().includes(query))
+      const inIngredients =
+        Array.isArray(recipe.ingredients) &&
+        recipe.ingredients.some((ing) => (ing?.name ?? '').toLowerCase().includes(query))
 
       return inTitle || inDescription || inCategory || inTags || inIngredients
     })
@@ -187,11 +190,39 @@ export function App() {
         setIsSettingsModalOpen(false)
         setCookingSession(null)
         setSelectedRecipeId(null)
+        setRecipeHistory([])
         setSearchQuery('')
         setSelectedFilter('Wszystkie')
       }
     } finally {
       setIsSigningOut(false)
+    }
+  }
+
+  const handleSelectRecipe = (id: string) => {
+    setRecipeHistory([id])
+    setSelectedRecipeId(id)
+  }
+
+  const handleNavigateToLinkedRecipe = (targetId: string) => {
+    setRecipeHistory((prev) => [...prev, targetId])
+    setSelectedRecipeId(targetId)
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
+
+  const handleBackFromRecipe = () => {
+    if (recipeHistory.length > 1) {
+      const nextHistory = recipeHistory.slice(0, -1)
+      setRecipeHistory(nextHistory)
+      setSelectedRecipeId(nextHistory[nextHistory.length - 1])
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      }
+    } else {
+      setRecipeHistory([])
+      setSelectedRecipeId(null)
     }
   }
 
@@ -267,7 +298,10 @@ export function App() {
               <RecipeDetailView
                 key={selectedRecipe.id}
                 recipe={selectedRecipe}
-                onBack={() => setSelectedRecipeId(null)}
+                allRecipes={recipes}
+                onBack={handleBackFromRecipe}
+                onSelectRecipe={handleNavigateToLinkedRecipe}
+                hasPreviousRecipe={recipeHistory.length > 1}
                 onToggleFavorite={toggleFavorite}
                 onUpdatePhoto={updatePhoto}
                 onUpdateRecipe={updateRecipeItem}
@@ -563,7 +597,7 @@ export function App() {
                         <RecipeCard
                           key={recipe.id}
                           recipe={recipe}
-                          onSelect={(item) => setSelectedRecipeId(item.id)}
+                          onSelect={(item) => handleSelectRecipe(item.id)}
                           onToggleFavorite={toggleFavorite}
                         />
                       ))}
@@ -588,7 +622,7 @@ export function App() {
               }
               onSaveRecipe={async (payload) => {
                 const created = await addRecipe(payload)
-                setSelectedRecipeId(created.id)
+                handleSelectRecipe(created.id)
                 return created
               }}
             />

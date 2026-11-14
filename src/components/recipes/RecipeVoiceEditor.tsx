@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import {
   AlertCircle,
   Check,
+  Link2,
   Mic,
   MicOff,
   Pencil,
@@ -25,6 +26,7 @@ export interface RecipeVoiceEditorProps {
   onOpenChange: (open: boolean) => void
   onApplyChanges: (recipeId: string, updatedFields: RecipeUpdate) => Promise<RecipeRow>
   hideFloatingTrigger?: boolean
+  onOpenLinkedRecipesModal?: () => void
 }
 
 const QUICK_EDIT_PROMPTS: readonly string[] = [
@@ -69,6 +71,7 @@ export function RecipeVoiceEditor({
   onOpenChange,
   onApplyChanges,
   hideFloatingTrigger = false,
+  onOpenLinkedRecipesModal,
 }: RecipeVoiceEditorProps) {
   const baseId = useId()
   const prefersReducedMotion = useReducedMotion()
@@ -607,6 +610,27 @@ export function RecipeVoiceEditor({
                     ))}
                   </div>
                 </div>
+
+                {onOpenLinkedRecipesModal && (
+                  <div className="flex items-center justify-between gap-3 rounded-2xl border border-stone-900/10 bg-amber-500/10 p-3 dark:border-white/10 dark:bg-amber-500/10">
+                    <div className="flex items-center gap-2 text-xs font-medium text-stone-800 dark:text-stone-200">
+                      <Link2 className="size-4 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden="true" />
+                      <span>Powiąż inne przepisy (np. chlebki naan, sos):</span>
+                    </div>
+                    <GlassButton
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        onOpenChange(false)
+                        onOpenLinkedRecipesModal()
+                      }}
+                      className="shrink-0"
+                    >
+                      Powiązania
+                    </GlassButton>
+                  </div>
+                )}
 
                 <GlassButton
                   type="submit"

@@ -6,6 +6,7 @@ import {
   isSupabaseConfigured,
   supabase,
   updateRecipe,
+  type LinkedRecipeItem,
   type RecipeCategory,
   type RecipeIngredient,
   type RecipeInsert,
@@ -16,6 +17,38 @@ import {
   type SourcePlatform,
   type StepIngredient,
 } from './supabase'
+
+export function extractLinkedRecipes(recipe: RecipeRow | null | undefined): LinkedRecipeItem[] {
+  if (!recipe) return []
+  if (Array.isArray(recipe.linked_recipes) && recipe.linked_recipes.length > 0) {
+    return recipe.linked_recipes.filter(
+      (item): item is LinkedRecipeItem =>
+        Boolean(
+          item &&
+            typeof item === 'object' &&
+            typeof item.recipe_id === 'string' &&
+            item.recipe_id.trim() &&
+            typeof item.label === 'string',
+        ),
+    )
+  }
+  if (recipe.nutrition && typeof recipe.nutrition === 'object') {
+    const raw = (recipe.nutrition as Record<string, unknown>).linked_recipes
+    if (Array.isArray(raw)) {
+      return raw.filter(
+        (item): item is LinkedRecipeItem =>
+          Boolean(
+            item &&
+              typeof item === 'object' &&
+              typeof item.recipe_id === 'string' &&
+              item.recipe_id.trim() &&
+              typeof item.label === 'string',
+          ),
+      )
+    }
+  }
+  return []
+}
 
 export interface ImportRecipePayload {
   url?: string
@@ -213,6 +246,48 @@ function normalizeStepIngredients(raw: unknown): StepIngredient[] {
   return result
 }
 
+export function sanitizeStepTimer(instruction: string, reportedSeconds: number): number {
+  const safeSeconds = Math.max(0, Math.round(Number(reportedSeconds) || 0))
+  if (!instruction || typeof instruction !== 'string') return safeSeconds
+
+  const clean = instruction.toLowerCase()
+
+  // Wzorzec na minuty: np. "odstaw na 10 minut", "10 min", "25 minut", "15-20 minut"
+  const minuteMatch = clean.match(
+    /(?:odstaw|piecz|gotuj|smaż|wyrastaj|duś|miksuj|studź|czekaj|pozostaw)?\s*(?:na|przez|ok\.?|około)?\s*(\d+(?:[.,]\d+)?)\s*(?:-|do)?\s*(?:\d+(?:[.,]\d+)?)?\s*(minut[yęa]?|min\b)/i,
+  )
+  if (minuteMatch) {
+    const rawNum = parseFloat(minuteMatch[1].replace(',', '.'))
+    if (Number.isFinite(rawNum) && rawNum > 0) {
+      const expectedSeconds = Math.round(rawNum * 60)
+      if (
+        safeSeconds === 0 ||
+        safeSeconds === Math.round(rawNum) ||
+        (rawNum >= 2 && safeSeconds === 60) ||
+        Math.abs(safeSeconds - expectedSeconds) > 60
+      ) {
+        return expectedSeconds
+      }
+    }
+  }
+
+  // Wzorzec na godziny: np. "1 godzina", "2 godziny", "1.5 godz"
+  const hourMatch = clean.match(
+    /(\d+(?:[.,]\d+)?)\s*(?:-|do)?\s*(?:\d+(?:[.,]\d+)?)?\s*(godzin[yęa]?|godz\b|h\b)/i,
+  )
+  if (hourMatch) {
+    const rawNum = parseFloat(hourMatch[1].replace(',', '.'))
+    if (Number.isFinite(rawNum) && rawNum > 0) {
+      const expectedSeconds = Math.round(rawNum * 3600)
+      if (safeSeconds === 0 || safeSeconds < expectedSeconds * 0.5) {
+        return expectedSeconds
+      }
+    }
+  }
+
+  return safeSeconds
+}
+
 function normalizeSteps(raw: unknown): RecipeStep[] {
   if (!Array.isArray(raw)) return []
   const normalized: RecipeStep[] = []
@@ -223,7 +298,8 @@ function normalizeSteps(raw: unknown): RecipeStep[] {
     if (!instruction) continue
 
     const stepNumber = toNonNegativeInt(record.step_number, normalized.length + 1, 1)
-    const timerSeconds = toNonNegativeInt(record.timer_seconds, 0, 0)
+    const rawTimerSeconds = toNonNegativeInt(record.timer_seconds, 0, 0)
+    const timerSeconds = sanitizeStepTimer(instruction, rawTimerSeconds)
     const stepIngredients = normalizeStepIngredients(record.step_ingredients)
     const tip = toNullableTrimmedString(record.tip)
 
@@ -400,6 +476,7 @@ function normalizeAiRecipeInsert(
     ingredients: normalizeIngredients(rawRecipe.ingredients),
     steps: normalizeSteps(rawRecipe.steps),
     nutrition: normalizeNutrition(rawRecipe.nutrition),
+    linked_recipes: Array.isArray(rawRecipe.linked_recipes) ? rawRecipe.linked_recipes : [],
   }
 }
 
@@ -887,6 +964,10 @@ export async function editRecipeWithAi(payload: {
       'nutrition' in rawRecipe
         ? normalizeNutrition(rawRecipe.nutrition)
         : currentRecipe.nutrition,
+    linked_recipes:
+      'linked_recipes' in rawRecipe && Array.isArray(rawRecipe.linked_recipes)
+        ? rawRecipe.linked_recipes
+        : currentRecipe.linked_recipes ?? [],
   }
 
   const previewRecipe: RecipeRow = {
@@ -901,6 +982,7 @@ export async function editRecipeWithAi(payload: {
     ingredients: updatedFields.ingredients ?? currentRecipe.ingredients,
     steps: updatedFields.steps ?? currentRecipe.steps,
     nutrition: updatedFields.nutrition ?? null,
+    linked_recipes: updatedFields.linked_recipes ?? currentRecipe.linked_recipes ?? [],
     // Zachowaj oryginalne metadane przepisu
     id: currentRecipe.id,
     image_url: currentRecipe.image_url,
@@ -947,16 +1029,52 @@ export async function createRecipe(payload: RecipeInsert): Promise<RecipeRow> {
     steps: payload.steps ?? [],
     is_favorite: payload.is_favorite ?? false,
     servings: payload.servings && payload.servings > 0 ? payload.servings : 2,
+    linked_recipes: Array.isArray(payload.linked_recipes) ? payload.linked_recipes : [],
   }
 
   const { data, error } = await insertRecipe(normalizedPayload)
   if (error) {
+    const errMsg = (error.message || '').toLowerCase()
+    // Fallback gdyby kolumna linked_recipes nie istniała jeszcze w bazie Supabase
+    if (
+      normalizedPayload.linked_recipes &&
+      normalizedPayload.linked_recipes.length > 0 &&
+      errMsg.includes('linked_recipes') &&
+      (errMsg.includes('column') || errMsg.includes('schema') || errMsg.includes('does not exist'))
+    ) {
+      const { linked_recipes, ...restPayload } = normalizedPayload
+      const existingNutrition =
+        normalizedPayload.nutrition && typeof normalizedPayload.nutrition === 'object'
+          ? normalizedPayload.nutrition
+          : {}
+      const fallbackPayload: RecipeInsert = {
+        ...restPayload,
+        nutrition: {
+          ...existingNutrition,
+          linked_recipes,
+        },
+      }
+      const fallbackRes = await insertRecipe(fallbackPayload)
+      if (fallbackRes.error) {
+        throw new Error(`Nie udało się zapisać przepisu: ${fallbackRes.error.message}`)
+      }
+      if (!fallbackRes.data) {
+        throw new Error('Przepis został zapisany, ale baza nie zwróciła utworzonego rekordu.')
+      }
+      return {
+        ...fallbackRes.data,
+        linked_recipes: linked_recipes ?? [],
+      }
+    }
     throw new Error(`Nie udało się zapisać przepisu: ${error.message}`)
   }
   if (!data) {
     throw new Error('Przepis został zapisany, ale baza nie zwróciła utworzonego rekordu.')
   }
-  return data
+  return {
+    ...data,
+    linked_recipes: extractLinkedRecipes(data),
+  }
 }
 
 /**
@@ -967,12 +1085,45 @@ export async function patchRecipe(id: string, payload: RecipeUpdate): Promise<Re
 
   const { data, error } = await updateRecipe(id, payload)
   if (error) {
+    const errMsg = (error.message || '').toLowerCase()
+    // Fallback gdyby kolumna linked_recipes nie istniała jeszcze w bazie Supabase
+    if (
+      payload.linked_recipes !== undefined &&
+      errMsg.includes('linked_recipes') &&
+      (errMsg.includes('column') || errMsg.includes('schema') || errMsg.includes('does not exist'))
+    ) {
+      const { linked_recipes, ...restPayload } = payload
+      const existingNutrition =
+        payload.nutrition && typeof payload.nutrition === 'object' ? payload.nutrition : {}
+      const fallbackPayload: RecipeUpdate = {
+        ...restPayload,
+        nutrition: {
+          ...existingNutrition,
+          linked_recipes,
+        },
+      }
+      const fallbackRes = await updateRecipe(id, fallbackPayload)
+      if (fallbackRes.error) {
+        throw new Error(`Nie udało się zaktualizować przepisu: ${fallbackRes.error.message}`)
+      }
+      if (!fallbackRes.data) {
+        throw new Error('Nie znaleziono przepisu do aktualizacji.')
+      }
+      return {
+        ...fallbackRes.data,
+        linked_recipes: linked_recipes ?? [],
+      }
+    }
+
     throw new Error(`Nie udało się zaktualizować przepisu: ${error.message}`)
   }
   if (!data) {
     throw new Error('Nie znaleziono przepisu do aktualizacji.')
   }
-  return data
+  return {
+    ...data,
+    linked_recipes: extractLinkedRecipes(data),
+  }
 }
 
 /**
