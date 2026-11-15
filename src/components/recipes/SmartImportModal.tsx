@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Camera,
   Check,
+  ChefHat,
   Clock,
   ExternalLink,
   Globe,
@@ -26,7 +27,6 @@ import {
   Timer,
   Trash2,
   Upload,
-  Wand2,
 } from 'lucide-react'
 import { useScrollEdges } from '../../hooks/useScrollEdges'
 import { useVoiceRecognition } from '../../hooks/useVoiceRecognition'
@@ -62,7 +62,7 @@ export interface SmartImportModalProps {
 type ImportTabId = 'discover' | 'url' | 'photo' | 'manual'
 
 const TABS: ReadonlyArray<{ id: ImportTabId; label: string; Icon: typeof Link2 }> = [
-  { id: 'discover', label: 'Szef Kuchni AI', Icon: Wand2 },
+  { id: 'discover', label: 'Szef Kuchni AI', Icon: ChefHat },
   { id: 'url', label: 'Z linku / Instagrama', Icon: Link2 },
   { id: 'photo', label: 'Ze zdjęcia / Zrzutu', Icon: Camera },
   { id: 'manual', label: 'Wpisz ręcznie', Icon: PenLine },
@@ -178,6 +178,7 @@ export function SmartImportModal({
   // Zakładka 1: Szef Kuchni AI
   const [chefPrompt, setChefPrompt] = useState('')
   const [useWebSearch, setUseWebSearch] = useState(true)
+  const [imageMode, setImageMode] = useState<'auto' | 'web' | 'ai'>('auto')
 
   const {
     isSupported: isVoiceSupported,
@@ -448,6 +449,7 @@ export function SmartImportModal({
       const draft = await discoverRecipeWithAi({
         userPrompt: prompt,
         useWebSearch,
+        imageMode,
         signal: controller.signal,
       })
       if (!isMountedRef.current) return
@@ -1381,13 +1383,50 @@ export function SmartImportModal({
                     </span>
                   </label>
 
+                  {/* Wybór sposobu pozyskania zdjęcia potrawy */}
+                  <div className="flex flex-col gap-1.5 rounded-2xl border border-white/40 bg-white/50 p-3 backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/40">
+                    <span className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                      Zdjęcie potrawy:
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      <GlassPill
+                        as="button"
+                        type="button"
+                        variant={imageMode === 'auto' ? 'active' : 'surface'}
+                        size="sm"
+                        onClick={() => setImageMode('auto')}
+                      >
+                        Automatycznie (sieć lub AI)
+                      </GlassPill>
+                      <GlassPill
+                        as="button"
+                        type="button"
+                        variant={imageMode === 'web' ? 'active' : 'surface'}
+                        size="sm"
+                        onClick={() => setImageMode('web')}
+                      >
+                        Znajdź w sieci
+                      </GlassPill>
+                      <GlassPill
+                        as="button"
+                        type="button"
+                        variant={imageMode === 'ai' ? 'active' : 'surface'}
+                        size="sm"
+                        onClick={() => setImageMode('ai')}
+                      >
+                        Wygeneruj AI
+                      </GlassPill>
+                    </div>
+                  </div>
+
                   <div className="pt-1">
                     <GlassButton
                       type="submit"
                       variant="primary"
                       size="lg"
                       fullWidth
-                      leftIcon={<Wand2 className="size-5" aria-hidden="true" />}
+                      disabled={isAnalyzing || !chefPrompt.trim()}
+                      leftIcon={<ChefHat className="size-5" aria-hidden="true" />}
                     >
                       Znajdź lub stwórz przepis z AI
                     </GlassButton>

@@ -65,7 +65,43 @@ export function CookingModeView({
   onExit,
   onUpdateRecipe: _onUpdateRecipe,
 }: CookingModeViewProps) {
-  const steps = useMemo<RecipeStep[]>(() => recipe.steps ?? [], [recipe.steps])
+  const normalizedSteps = useMemo<RecipeStep[]>(() => {
+    if (!Array.isArray(recipe?.steps)) return []
+    return recipe.steps
+      .map((step, idx) => {
+        if (typeof step === 'string') {
+          return {
+            step_number: idx + 1,
+            instruction: step,
+            step_ingredients: [],
+            timer_seconds: 0,
+            tip: null,
+          }
+        }
+        const rawText = String(
+          (step as { instruction?: string })?.instruction ??
+            (step as { text?: string })?.text ??
+            '',
+        ).trim()
+        const rawTimer =
+          typeof (step as { timer_seconds?: number })?.timer_seconds === 'number'
+            ? (step as { timer_seconds?: number }).timer_seconds
+            : typeof (step as { timerMinutes?: number })?.timerMinutes === 'number'
+              ? (step as { timerMinutes?: number }).timerMinutes! * 60
+              : 0
+
+        return {
+          step_number: step?.step_number ?? (step as { order?: number })?.order ?? idx + 1,
+          instruction: rawText,
+          step_ingredients: Array.isArray(step?.step_ingredients) ? step.step_ingredients : [],
+          timer_seconds: rawTimer ?? 0,
+          tip: step?.tip ?? null,
+        }
+      })
+      .filter((s) => s.instruction.length > 0)
+  }, [recipe.steps])
+
+  const steps = normalizedSteps
   const totalSteps = steps.length
   const baseServings = recipe.servings && recipe.servings > 0 ? recipe.servings : 2
 
@@ -140,7 +176,7 @@ export function CookingModeView({
 
   const uncheckedStepIngredients = useMemo(() => {
     if (!currentStep) return []
-    return currentStep.step_ingredients
+    return (currentStep.step_ingredients ?? [])
       .map((ing, idx) => {
         const key = getIngredientKey(safeStepIndex, idx, ing.name)
         const scaled =
@@ -358,7 +394,7 @@ export function CookingModeView({
     )
   }
 
-  const checkedCountForStep = currentStep.step_ingredients.reduce((acc, ing, idx) => {
+  const checkedCountForStep = (currentStep.step_ingredients ?? []).reduce((acc, ing, idx) => {
     const key = getIngredientKey(safeStepIndex, idx, ing.name)
     return checkedIngredients[key] ? acc + 1 : acc
   }, 0)

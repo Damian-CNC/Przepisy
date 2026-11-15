@@ -515,12 +515,72 @@ export async function importRecipeWithAi(payload: ImportRecipePayload): Promise<
   })
 }
 
+export async function generateOrEditRecipeWithAi(params: {
+  mode: 'create' | 'edit'
+  prompt: string
+  existingRecipe?: unknown
+  imageMode?: 'auto' | 'web' | 'ai' | 'none'
+  userId?: string
+  signal?: AbortSignal
+}): Promise<RecipeInsert> {
+  const envelope = await invokeEdgeFunction<Record<string, unknown>>(
+    'ai-recipe-assistant',
+    {
+      mode: params.mode,
+      prompt: params.prompt,
+      existingRecipe: params.existingRecipe,
+      imageMode: params.imageMode ?? (params.mode === 'create' ? 'auto' : 'none'),
+      userId: params.userId,
+    },
+    {
+      signal: params.signal,
+      timeoutMs: IMPORT_TIMEOUT_MS,
+      authErrorMsg: 'Brak uprawnień do asystenta AI. Zaloguj się ponownie i spróbuj jeszcze raz.',
+    },
+  )
+
+  const rawRecipe = extractRawRecipeRecord(envelope)
+  return normalizeAiRecipeInsert(rawRecipe, {
+    sourcePlatform: 'ai',
+  })
+}
+
+export async function importRecipeFromSource(params: {
+  url?: string
+  text?: string
+  images?: Array<{ mimeType: string; dataBase64: string }>
+  userId?: string
+  signal?: AbortSignal
+}): Promise<RecipeInsert> {
+  const envelope = await invokeEdgeFunction<Record<string, unknown>>(
+    'import-recipe',
+    {
+      url: params.url,
+      text: params.text,
+      images: params.images,
+      userId: params.userId,
+    },
+    {
+      signal: params.signal,
+      timeoutMs: IMPORT_TIMEOUT_MS,
+      authErrorMsg: 'Brak uprawnień do importu AI. Zaloguj się ponownie i spróbuj jeszcze raz.',
+    },
+  )
+
+  const rawRecipe = extractRawRecipeRecord(envelope)
+  return normalizeAiRecipeInsert(rawRecipe, {
+    sourceUrl: params.url ?? null,
+    sourcePlatform: inferSourcePlatform(rawRecipe.source_platform, { url: params.url, rawText: params.text }),
+  })
+}
+
 /**
  * Tworzy lub wyszukuje przepis przy użyciu Edge Function `ai-recipe-assistant` (`mode: 'discover'`).
  */
 export async function discoverRecipeWithAi(payload: {
   userPrompt: string
   useWebSearch: boolean
+  imageMode?: 'auto' | 'web' | 'ai' | 'none'
   signal?: AbortSignal
 }): Promise<RecipeInsert> {
   const userPrompt = payload.userPrompt.trim()
@@ -533,7 +593,9 @@ export async function discoverRecipeWithAi(payload: {
     {
       mode: 'discover',
       userPrompt,
+      prompt: userPrompt,
       useWebSearch: payload.useWebSearch,
+      imageMode: payload.imageMode ?? (payload.useWebSearch ? 'web' : 'auto'),
     },
     {
       signal: payload.signal,

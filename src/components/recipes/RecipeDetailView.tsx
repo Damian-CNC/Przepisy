@@ -3,7 +3,6 @@ import { motion, useReducedMotion, useScroll, useTransform } from 'framer-motion
 import {
   AlertCircle,
   ArrowLeft,
-  ArrowRight,
   ChefHat,
   Clock,
   ExternalLink,
@@ -14,13 +13,14 @@ import {
   Lightbulb,
   Link2,
   Minus,
-  Pencil,
   Play,
   Plus,
+  Settings,
   Sparkles,
   Timer,
   Trash2,
   Users,
+  X,
 } from 'lucide-react'
 import {
   extractLinkedRecipes,
@@ -85,6 +85,7 @@ export function RecipeDetailView({
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [isVoiceEditorOpen, setIsVoiceEditorOpen] = useState(false)
   const [isLinkedModalOpen, setIsLinkedModalOpen] = useState(false)
+  const [isEditMode, setIsEditMode] = useState(false)
 
   const linkedRecipes = extractLinkedRecipes(recipe)
 
@@ -255,60 +256,19 @@ export function RecipeDetailView({
         )}
 
         {/* Pasek górnych akcji na zdjęciu (z zapasem poniżej Dynamic Island na iPhone) */}
-        <div className="absolute inset-x-0 top-0 z-10 mx-auto flex max-w-4xl items-center justify-between gap-2 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] sm:px-6">
+        <div className="absolute inset-x-0 top-0 z-10 mx-auto flex w-full max-w-4xl items-center justify-between gap-2 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] sm:px-6">
           <GlassButton
             variant="secondary"
             size="md"
             leftIcon={<ArrowLeft className="size-4" aria-hidden="true" />}
             onClick={onBack}
-            className="border-white/30 bg-zinc-950/65 text-white hover:bg-zinc-950/80 dark:border-white/25 dark:bg-zinc-950/70 dark:text-white"
+            className="shrink-0 border-white/30 bg-zinc-950/65 text-white hover:bg-zinc-950/80 dark:border-white/25 dark:bg-zinc-950/70 dark:text-white"
           >
             {hasPreviousRecipe ? 'Wróć' : 'Przepisy'}
           </GlassButton>
 
-          <div className="flex items-center gap-2">
-            <GlassButton
-              variant="secondary"
-              size="md"
-              leftIcon={<Link2 className="size-4 text-amber-300" aria-hidden="true" />}
-              onClick={() => setIsLinkedModalOpen(true)}
-              className="border-white/30 bg-zinc-950/65 text-white hover:bg-zinc-950/80 dark:border-white/25 dark:bg-zinc-950/70 dark:text-white"
-            >
-              <span className="hidden sm:inline">
-                {linkedRecipes.length > 0 ? `Powiązania (${linkedRecipes.length})` : 'Powiąż przepis'}
-              </span>
-              <span className="sm:hidden">
-                {linkedRecipes.length > 0 ? `🔗 ${linkedRecipes.length}` : 'Powiąż'}
-              </span>
-            </GlassButton>
-
-            <input
-              ref={photoInputRef}
-              type="file"
-              accept="image/*"
-              className="sr-only"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                void handlePhotoSelect(file)
-                e.target.value = ''
-              }}
-            />
-
-            <GlassButton
-              variant="secondary"
-              size="md"
-              isLoading={isUpdatingPhoto || photoAction !== null}
-              loadingText={photoAction === 'generate' ? 'Generuję...' : photoAction === 'search' ? 'Szukam...' : 'Zapis...'}
-              leftIcon={<ImagePlus className="size-4" aria-hidden="true" />}
-              onClick={() => setIsPhotoOptionsOpen(true)}
-              className="border-white/30 bg-zinc-950/65 text-white hover:bg-zinc-950/80 dark:border-white/25 dark:bg-zinc-950/70 dark:text-white"
-            >
-              <span className="hidden sm:inline">
-                {recipe.image_url ? 'Podmień zdjęcie' : 'Dodaj zdjęcie'}
-              </span>
-              <span className="sm:hidden">Zdjęcie</span>
-            </GlassButton>
-
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Serduszko (Ulubione) — nie wychodzi poza ekran (Punkt 5) */}
             <motion.button
               type="button"
               aria-label={isFavorite ? 'Usuń z ulubionych' : 'Dodaj do ulubionych'}
@@ -319,7 +279,7 @@ export function RecipeDetailView({
               whileTap={prefersReducedMotion ? undefined : { scale: 0.85 }}
               transition={{ type: 'spring', stiffness: 520, damping: 24 }}
               className={cn(
-                'inline-flex size-11 cursor-pointer items-center justify-center rounded-full',
+                'inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full',
                 'border border-white/30 bg-zinc-950/65 text-white backdrop-blur-xl hover:bg-zinc-950/80',
                 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400',
               )}
@@ -333,20 +293,22 @@ export function RecipeDetailView({
               />
             </motion.button>
 
+            {/* Zębatka — przełącznik Trybu Edycji (Punkt 7) */}
             <button
               type="button"
-              aria-label="Usuń przepis"
-              onClick={() => {
-                setDeleteError(null)
-                setIsDeleteModalOpen(true)
-              }}
+              aria-label={isEditMode ? 'Wyłącz tryb edycji' : 'Włącz tryb edycji'}
+              aria-pressed={isEditMode}
+              onClick={() => setIsEditMode((prev) => !prev)}
               className={cn(
-                'inline-flex size-11 cursor-pointer items-center justify-center rounded-full',
-                'border border-white/30 bg-zinc-950/65 text-white backdrop-blur-xl hover:bg-red-600/85',
+                'inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full',
+                'border backdrop-blur-xl transition-colors',
                 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400',
+                isEditMode
+                  ? 'border-amber-400 bg-amber-500 text-zinc-950 shadow-md shadow-amber-500/30'
+                  : 'border-white/30 bg-zinc-950/65 text-white hover:bg-zinc-950/80 dark:border-white/25 dark:bg-zinc-950/70',
               )}
             >
-              <Trash2 className="size-5" aria-hidden="true" />
+              <Settings className="size-5" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -374,11 +336,159 @@ export function RecipeDetailView({
           <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-4xl">
             {recipe.title}
           </h1>
+
+          {/* Powiązane przepisy pod nazwą przepisu (Punkt 9) */}
+          {linkedRecipes.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-medium text-white/80">Pasuje do:</span>
+              {linkedRecipes.map((linked) => {
+                const target = allRecipes.find((r) => r.id === linked.recipe_id)
+                const displayTitle = target?.title || linked.label || 'Powiązany przepis'
+                const displayLabel = linked.label ? `${linked.label}: ` : ''
+                return (
+                  <button
+                    key={linked.recipe_id}
+                    type="button"
+                    onClick={() => onSelectRecipe?.(linked.recipe_id)}
+                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-amber-300/40 bg-zinc-950/75 px-3 py-1 text-xs font-semibold text-amber-300 backdrop-blur-xl transition-colors hover:bg-amber-500/25 active:scale-95"
+                  >
+                    <Link2 className="size-3.5 shrink-0 text-amber-400" aria-hidden="true" />
+                    <span className="max-w-[220px] truncate">
+                      {displayLabel}{displayTitle}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
       </div>
 
+      {/* Ukryty input do wyboru pliku okładki */}
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        className="sr-only"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          void handlePhotoSelect(file)
+          e.target.value = ''
+        }}
+      />
+
       {/* Główna treść szczegółów */}
       <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pt-6 sm:px-6">
+        {/* Panel Trybu Edycji pod Zębatką (Punkt 7, 8, 12) */}
+        {isEditMode && (
+          <section
+            aria-label="Tryb edycji przepisu"
+            className="space-y-4 rounded-3xl border border-amber-500/40 bg-amber-500/10 p-4 backdrop-blur-xl dark:border-amber-400/30 dark:bg-amber-500/10"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-300">
+                <Settings className="size-4" />
+                <span>Tryb edycji przepisu</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditMode(false)}
+                className="cursor-pointer text-xs font-medium text-stone-600 underline hover:text-stone-900 dark:text-stone-300 dark:hover:text-white"
+              >
+                Zakończ edycję
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+              {/* Przycisk Edytuj z AI przeniesiony do Trybu Edycji (Punkt 12) */}
+              <GlassButton
+                type="button"
+                variant="primary"
+                size="md"
+                leftIcon={<ChefHat className="size-4 shrink-0" />}
+                onClick={() => setIsVoiceEditorOpen(true)}
+              >
+                Edytuj z AI
+              </GlassButton>
+
+              {/* Przycisk Dodaj powiązany przepis przeniesiony do Trybu Edycji (Punkt 8) */}
+              <GlassButton
+                type="button"
+                variant="secondary"
+                size="md"
+                leftIcon={<Link2 className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />}
+                onClick={() => setIsLinkedModalOpen(true)}
+              >
+                Dodaj powiązany przepis
+              </GlassButton>
+
+              {/* Przycisk zmiany zdjęcia w Trybie Edycji */}
+              <GlassButton
+                type="button"
+                variant="secondary"
+                size="md"
+                isLoading={isUpdatingPhoto || photoAction !== null}
+                loadingText={photoAction === 'generate' ? 'Generuję...' : photoAction === 'search' ? 'Szukam...' : 'Zapis...'}
+                leftIcon={<ImagePlus className="size-4 shrink-0" />}
+                onClick={() => setIsPhotoOptionsOpen(true)}
+              >
+                {recipe.image_url ? 'Podmień zdjęcie' : 'Dodaj zdjęcie'}
+              </GlassButton>
+            </div>
+
+            {/* Lista powiązanych przepisów z opcją odpięcia (X) w Trybie Edycji (Punkt 8) */}
+            {linkedRecipes.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <span className="text-xs font-medium text-stone-600 dark:text-stone-300">
+                  Aktualnie powiązane przepisy:
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {linkedRecipes.map((linked) => {
+                    const target = allRecipes.find((r) => r.id === linked.recipe_id)
+                    const displayTitle = target?.title || linked.label || 'Powiązany przepis'
+                    return (
+                      <span
+                        key={linked.recipe_id}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-stone-900/10 bg-white/70 px-3 py-1 text-xs text-stone-800 backdrop-blur-md dark:border-white/10 dark:bg-zinc-800/80 dark:text-stone-100"
+                      >
+                        <span className="max-w-[180px] truncate">
+                          {linked.label ? `${linked.label} ` : ''}
+                          {displayTitle}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`Usuń powiązanie z ${displayTitle}`}
+                          onClick={async () => {
+                            const remaining = linkedRecipes.filter((l) => l.recipe_id !== linked.recipe_id)
+                            await onUpdateRecipe(recipe.id, { linked_recipes: remaining })
+                          }}
+                          className="cursor-pointer rounded-full p-0.5 text-stone-400 transition-colors hover:bg-rose-500/20 hover:text-rose-500"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end border-t border-amber-500/20 pt-3 dark:border-amber-400/20">
+              <GlassButton
+                type="button"
+                variant="danger"
+                size="sm"
+                leftIcon={<Trash2 className="size-4" />}
+                onClick={() => {
+                  setDeleteError(null)
+                  setIsDeleteModalOpen(true)
+                }}
+              >
+                Usuń przepis
+              </GlassButton>
+            </div>
+          </section>
+        )}
         <div aria-live="polite">
           {photoError && (
             <div
@@ -480,131 +590,6 @@ export function RecipeDetailView({
             </div>
           </div>
         </GlassCard>
-
-        {/* Sekcja powiązanych przepisów (np. "Najlepiej podawać z: Chlebki naan") */}
-        {linkedRecipes.length > 0 ? (
-          <div className="space-y-3">
-            {linkedRecipes.map((link, idx) => {
-              const target = allRecipes.find((r) => r.id === link.recipe_id)
-              if (!target) return null
-              const prep =
-                typeof target.prep_time_minutes === 'number'
-                  ? Math.max(0, target.prep_time_minutes)
-                  : 0
-              const cook =
-                typeof target.cook_time_minutes === 'number'
-                  ? Math.max(0, target.cook_time_minutes)
-                  : 0
-              const targetTime = prep + cook
-
-              return (
-                <GlassCard
-                  key={`${link.recipe_id}-${idx}`}
-                  variant="elevated"
-                  padding="md"
-                  className="space-y-2.5 overflow-hidden"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold tracking-wider text-amber-800 uppercase dark:text-amber-300">
-                      {link.label || 'Najlepiej podawać z:'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsLinkedModalOpen(true)}
-                      className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-stone-500 transition-colors hover:text-amber-700 dark:text-stone-400 dark:hover:text-amber-300"
-                    >
-                      <Pencil className="size-3" aria-hidden="true" />
-                      <span>Edytuj powiązanie</span>
-                    </button>
-                  </div>
-
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => onSelectRecipe?.(target.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        onSelectRecipe?.(target.id)
-                      }
-                    }}
-                    className={cn(
-                      'group flex cursor-pointer items-center justify-between gap-3.5 rounded-2xl p-3',
-                      'border border-stone-900/10 bg-white/70 backdrop-blur-xl',
-                      'transition-all duration-200 hover:border-amber-500/40 hover:bg-white/90 hover:shadow-md',
-                      'dark:border-white/10 dark:bg-zinc-900/70 dark:hover:border-amber-400/40 dark:hover:bg-zinc-800/80',
-                      'focus-visible:outline-2 focus-visible:outline-amber-600 dark:focus-visible:outline-amber-400',
-                    )}
-                  >
-                    <div className="flex min-w-0 items-center gap-3.5">
-                      <div className="relative size-16 shrink-0 overflow-hidden rounded-xl bg-amber-500/10">
-                        {target.image_url ? (
-                          <img
-                            src={target.image_url}
-                            alt={target.title}
-                            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center">
-                            <ChefHat className="size-7 text-amber-700/40 dark:text-amber-300/40" />
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="min-w-0">
-                        {target.category && (
-                          <span className="text-[11px] font-semibold tracking-wider text-amber-700 uppercase dark:text-amber-400">
-                            {target.category}
-                          </span>
-                        )}
-                        <h3 className="truncate text-base font-semibold text-stone-900 transition-colors group-hover:text-amber-800 dark:text-stone-50 dark:group-hover:text-amber-300">
-                          {target.title}
-                        </h3>
-                        <div className="mt-0.5 flex items-center gap-2 text-xs text-stone-600 dark:text-stone-300">
-                          {targetTime > 0 && (
-                            <span className="flex items-center gap-1">
-                              <Clock className="size-3 text-amber-600 dark:text-amber-400" />
-                              {targetTime} min
-                            </span>
-                          )}
-                          {Array.isArray(target.ingredients) && target.ingredients.length > 0 && (
-                            <span>• {target.ingredients.length} składników</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex shrink-0 items-center gap-1.5 pr-1 text-xs font-semibold text-amber-700 transition-transform group-hover:translate-x-0.5 dark:text-amber-400">
-                      <span>Zobacz przepis</span>
-                      <ArrowRight className="size-4" aria-hidden="true" />
-                    </div>
-                  </div>
-                </GlassCard>
-              )
-            })}
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setIsLinkedModalOpen(true)}
-            className={cn(
-              'flex w-full cursor-pointer items-center justify-between gap-3 rounded-2xl p-3.5 text-left text-sm font-medium',
-              'border border-dashed border-stone-900/20 bg-white/40 backdrop-blur-xl',
-              'text-stone-600 transition-colors hover:border-amber-500/50 hover:bg-white/70 hover:text-amber-800',
-              'dark:border-white/15 dark:bg-white/5 dark:text-stone-300 dark:hover:border-amber-400/50 dark:hover:bg-white/10 dark:hover:text-amber-300',
-            )}
-          >
-            <div className="flex items-center gap-2.5">
-              <div className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-400">
-                <Link2 className="size-4" />
-              </div>
-              <span>Podepnij pasujący przepis (np. chlebki naan, sos, surówka)</span>
-            </div>
-            <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
-              + Podepnij
-            </span>
-          </button>
-        )}
 
         {/* Siatka: Składniki + Kroki w stylu Thermomix */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-start">
@@ -777,12 +762,13 @@ export function RecipeDetailView({
         </div>
       </main>
 
-      {/* Pływający asystent głosowej edycji przepisu (nad dolnym CTA) */}
+      {/* Asystent głosowej/tekstowej edycji przepisu (otwierany z Trybu Edycji) */}
       <RecipeVoiceEditor
         recipe={recipe}
         isOpen={isVoiceEditorOpen}
         onOpenChange={setIsVoiceEditorOpen}
         onApplyChanges={handleApplyVoiceChanges}
+        hideFloatingTrigger={true}
         onOpenLinkedRecipesModal={() => setIsLinkedModalOpen(true)}
       />
 
