@@ -34,6 +34,7 @@ import type { RecipeRow, RecipeUpdate } from '../../lib/supabase'
 import { GlassButton, GlassCard, GlassModal, GlassPill, cn } from '../ui'
 import { LinkedRecipesModal } from './LinkedRecipesModal'
 import { RecipeEditModal } from './RecipeEditModal'
+import { RecipePhotoPickerModal } from './RecipePhotoPickerModal'
 import { RecipeVoiceEditor } from './RecipeVoiceEditor'
 import { formatTimerLabel, getSourceMeta } from './recipeMeta'
 import { useWakeLock } from '../../hooks/useWakeLock'
@@ -81,6 +82,8 @@ export function RecipeDetailView({
   const [isUpdatingPhoto, setIsUpdatingPhoto] = useState(false)
   const [photoAction, setPhotoAction] = useState<'search' | 'generate' | null>(null)
   const [isPhotoOptionsOpen, setIsPhotoOptionsOpen] = useState(false)
+  const [isPhotoPickerOpen, setIsPhotoPickerOpen] = useState(false)
+  const [photoPickerNotice, setPhotoPickerNotice] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -137,21 +140,40 @@ export function RecipeDetailView({
     if (photoAction !== null || isUpdatingPhoto) return
     setIsPhotoOptionsOpen(false)
     setPhotoError(null)
-    setPhotoAction(forceGenerate ? 'generate' : 'search')
+
+    if (!forceGenerate) {
+      setPhotoPickerNotice(null)
+      setIsPhotoPickerOpen(true)
+      return
+    }
+
+    setPhotoAction('generate')
     try {
-      const imageUrl = await generateRecipeCoverImage({
+      const res = await generateRecipeCoverImage({
         title: recipe.title,
         description: recipe.description,
         category: recipe.category,
-        forceGenerate,
+        forceGenerate: true,
       })
-      await onUpdateRecipe(recipe.id, { image_url: imageUrl })
+
+      if (res.imageUrl) {
+        await onUpdateRecipe(recipe.id, { image_url: res.imageUrl })
+      } else if (res.aiUnavailable) {
+        setPhotoPickerNotice(
+          'Generowanie AI jest niedostępne na darmowym kluczu Google API. Poniżej pobrano 4 najlepsze zdjęcia z sieci – wybierz to, które pasuje najlepiej:',
+        )
+        setIsPhotoPickerOpen(true)
+      }
     } catch (err) {
       setPhotoError(
         err instanceof Error && err.message
           ? err.message
-          : 'Nie udało się dobrać ani wygenerować zdjęcia dla tego przepisu.',
+          : 'Nie udało się wygenerować zdjęcia dla tego przepisu.',
       )
+      setPhotoPickerNotice(
+        'Nie udało się połączyć z generatorem AI. Wybierz jedno ze zdjęć z sieci poniżej:',
+      )
+      setIsPhotoPickerOpen(true)
     } finally {
       setPhotoAction(null)
     }
@@ -881,6 +903,21 @@ export function RecipeDetailView({
         recipe={recipe}
         onSave={async (payload) => {
           await onUpdateRecipe(recipe.id, payload)
+        }}
+      />
+
+      {/* Modal wyboru 4 zdjęć z sieci lub generatora AI */}
+      <RecipePhotoPickerModal
+        isOpen={isPhotoPickerOpen}
+        onClose={() => {
+          setIsPhotoPickerOpen(false)
+          setPhotoPickerNotice(null)
+        }}
+        recipeTitle={recipe.title}
+        recipeId={recipe.id}
+        initialNotice={photoPickerNotice}
+        onPhotoSelected={async (imageUrl) => {
+          await onUpdateRecipe(recipe.id, { image_url: imageUrl })
         }}
       />
     </div>

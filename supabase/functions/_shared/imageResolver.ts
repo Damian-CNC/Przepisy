@@ -1,6 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GeminiConfig } from "./geminiConfig.ts";
 
+export interface WebImageCandidate {
+  url: string;
+  thumbnail: string;
+  title: string;
+}
+
 function getStorageClient() {
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -54,13 +60,13 @@ export async function rehostExternalImage(
     });
     clearTimeout(timer);
 
-    if (!res.ok) return null;
+    if (!res.ok) return externalUrl;
     const contentType = res.headers.get("content-type") ?? "image/jpeg";
-    if (!contentType.startsWith("image/")) return null;
+    if (!contentType.startsWith("image/")) return externalUrl;
 
     const arrayBuffer = await res.arrayBuffer();
     if (arrayBuffer.byteLength < 1024 || arrayBuffer.byteLength > 8 * 1024 * 1024) {
-      return null;
+      return externalUrl;
     }
 
     const uploaded = await uploadBufferToStorage(new Uint8Array(arrayBuffer), contentType, userId);
@@ -77,37 +83,6 @@ function cleanDishTitle(raw: string): string {
       "",
     )
     .trim();
-}
-
-function getCulinarySearchQueries(title: string): string[] {
-  const clean = cleanDishTitle(title);
-  const words = clean.split(/\s+/);
-  const queries: string[] = [];
-
-  const isBakery = /(?:chleb|bułk|naan|bagiet|ciast|tost|pancake|naleśnik|focaccia|pita|shokupan|chałk)/i.test(clean);
-  const isPasta = /(?:makaron|pasta|spaghetti|carbonara|penne|tagliatelle|lasagn|bolognese)/i.test(clean);
-  const isSoup = /(?:zupa|rosół|barszcz|krem|żur|gulasz)/i.test(clean);
-
-  // Zawsze pierwszeństwo mają precyzyjne frazy kulinarne
-  if (isBakery) {
-    if (words.length > 1) queries.push(`${words[words.length - 1]} bread`);
-    queries.push(`${clean} bread`);
-  } else if (isPasta) {
-    if (words.length > 1) queries.push(`${words[words.length - 1]} pasta`);
-    queries.push(`${clean} pasta`);
-  } else if (isSoup) {
-    queries.push(`${clean} soup`);
-  }
-
-  queries.push(`${clean} food`);
-  queries.push(`${clean} dish`);
-  if (words.length > 1) {
-    queries.push(`${words[words.length - 1]} food`);
-    queries.push(`${words[words.length - 1]} dish`);
-  }
-  queries.push(clean);
-
-  return [...new Set(queries.filter((q) => q.length >= 3))];
 }
 
 function isFoodPhotoCandidate(url: string, title?: string): boolean {
@@ -165,56 +140,71 @@ export function getCuratedFoodFallback(query: string): string {
 }
 
 /**
- * 2. Wyszukuje zdjęcie dania w Wikimedia Commons (tylko pliki medialne z dopiskiem kulinarnym).
- * Wyklucza artykuły Wikipedii, eliminując ryzyko pobrania portretu osoby lub polityka.
+ * Zwraca 4-6 dopasowanych zdjęć kulinarnych z sieci do wyboru dla użytkownika.
+ * Przeszukuje sieć kulinarną (DuckDuckGo / blogi kulinarne) z fallbackiem do Commons i bazy curated.
  */
-export async function searchWebDishImage(
+export async function searchWebFoodCandidates(
   query: string,
-  userId?: string,
-): Promise<string | null> {
-  const queries = getCulinarySearchQueries(query);
+  limit = 4,
+): Promise<WebImageCandidate[]> {
+  const clean = cleanDishTitle(query);
+  const searchQueries = [
+    `${clean} przepis`,
+    clean,
+    `${clean} food`,
+  ];
 
-  for (const q of queries) {
-    const searchUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(q)}&gsrnamespace=6&gsrlimit=6&prop=imageinfo&iiprop=url|mime&format=json&origin=*`;
-
+  for (const q of searchQueries) {
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 6000);
-      const res = await fetch(searchUrl, {
+      const tokenController = new AbortController();
+      const tokenTimer = setTimeout(() => tokenController.abort(), 4000);
+      const tokenRes = await fetch(`https://duckduckgo.com/?q=${encodeURIComponent(q)}`, {
+        signal: tokenController.signal,
         headers: {
-          "User-Agent": "PrzepisyApp/2.0 (app@naszeprzepisy.pl)",
-          Accept: "application/json",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         },
-        signal: controller.signal,
       });
-      clearTimeout(timer);
+      clearTimeout(tokenTimer);
 
-      if (!res.ok) continue;
-      const text = await res.text();
-      let json: Record<string, unknown> | null = null;
-      try {
-        json = JSON.parse(text) as Record<string, unknown>;
-      } catch {
-        continue;
-      }
+      if (!tokenRes.ok) continue;
+      const tokenText = await tokenRes.text();
+      const vqdMatch = tokenText.match(/vqd=([^&"']+)/i) || tokenText.match(/vqd=["']([^"']+)["']/i);
+      if (!vqdMatch?.[1]) continue;
 
-      const queryObj = json?.query as Record<string, unknown> | undefined;
-      const pages = Object.values((queryObj?.pages as Record<string, unknown>) ?? {});
+      const vqd = vqdMatch[1];
+      const imgSearchUrl = `https://duckduckgo.com/i.js?l=pl-pl&o=json&q=${encodeURIComponent(q)}&vqd=${vqd}&f=,,,type:photo,&p=1`;
 
-      for (const p of pages) {
-        const pageRecord = p as Record<string, unknown>;
-        const titleStr = typeof pageRecord.title === "string" ? pageRecord.title : "";
-        const imageinfoArr = pageRecord?.imageinfo as Array<Record<string, unknown>> | undefined;
-        const candidateUrl = typeof imageinfoArr?.[0]?.url === "string" ? imageinfoArr[0].url : "";
-        const mime = typeof imageinfoArr?.[0]?.mime === "string" ? imageinfoArr[0].mime : "";
+      const imgController = new AbortController();
+      const imgTimer = setTimeout(() => imgController.abort(), 6000);
+      const imgRes = await fetch(imgSearchUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Referer: "https://duckduckgo.com/",
+        },
+        signal: imgController.signal,
+      });
+      clearTimeout(imgTimer);
 
-        if (
-          candidateUrl &&
-          (!mime || mime.startsWith("image/")) &&
-          isFoodPhotoCandidate(candidateUrl, titleStr)
-        ) {
-          const stored = await rehostExternalImage(candidateUrl, userId);
-          return stored || candidateUrl;
+      if (!imgRes.ok) continue;
+      const json = await imgRes.json();
+      const rawResults = json?.results as Array<{ image?: string; thumbnail?: string; title?: string }> | undefined;
+
+      if (Array.isArray(rawResults) && rawResults.length > 0) {
+        const filtered = rawResults
+          .filter((item) => {
+            const u = item.image || "";
+            const t = item.title || "";
+            return u.startsWith("http") && isFoodPhotoCandidate(u, t);
+          })
+          .slice(0, limit)
+          .map((item) => ({
+            url: item.image!,
+            thumbnail: item.thumbnail || item.image!,
+            title: item.title || clean,
+          }));
+
+        if (filtered.length >= Math.min(2, limit)) {
+          return filtered;
         }
       }
     } catch {
@@ -222,33 +212,134 @@ export async function searchWebDishImage(
     }
   }
 
+  // Fallback: Wikimedia Commons
+  const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(clean + " food")}&gsrnamespace=6&gsrlimit=8&prop=imageinfo&iiprop=url|mime&format=json&origin=*`;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(commonsUrl, {
+      headers: { "User-Agent": "PrzepisyApp/2.0 (app@naszeprzepisy.pl)" },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      const json = await res.json();
+      const pages = Object.values(json?.query?.pages ?? {}) as any[];
+      const commonsList: WebImageCandidate[] = [];
+
+      for (const p of pages) {
+        if (commonsList.length >= limit) break;
+        const candidateUrl = p?.imageinfo?.[0]?.url;
+        const mime = p?.imageinfo?.[0]?.mime || "";
+        const titleStr = p?.title || "";
+
+        if (
+          candidateUrl &&
+          (!mime || mime.startsWith("image/")) &&
+          isFoodPhotoCandidate(candidateUrl, titleStr)
+        ) {
+          commonsList.push({
+            url: candidateUrl,
+            thumbnail: candidateUrl,
+            title: titleStr.replace(/^File:/i, "").replace(/\.[^.]+$/, ""),
+          });
+        }
+      }
+
+      if (commonsList.length > 0) {
+        return commonsList;
+      }
+    }
+  } catch {}
+
+  // Curated fallback
+  const fallbackUrl = getCuratedFoodFallback(clean);
+  return [
+    {
+      url: fallbackUrl,
+      thumbnail: fallbackUrl,
+      title: clean,
+    },
+  ];
+}
+
+/**
+ * Wyszukuje jedno najlepsze zdjęcie dania w sieci (do automatycznego doboru przy imporcie).
+ */
+export async function searchWebDishImage(
+  query: string,
+  userId?: string,
+): Promise<string | null> {
+  const candidates = await searchWebFoodCandidates(query, 1);
+  if (candidates.length > 0) {
+    const candidate = candidates[0].url;
+    const stored = await rehostExternalImage(candidate, userId);
+    return stored || candidate;
+  }
   return null;
 }
 
 /**
- * 3. Generuje zdjęcie potrawy przez model Gemini Image i zapisuje je do Supabase Storage.
+ * Generuje zdjęcie potrawy przez model Gemini Image i zapisuje je do Supabase Storage.
  */
 export async function generateAiDishImage(
   config: GeminiConfig,
   dishTitle: string,
   userId?: string,
 ): Promise<string | null> {
+  const prompt = `Close-up delicious food photography of ${dishTitle}, served fresh on a beautiful plate, natural warm kitchen lighting, appetizing, commercial culinary food styling, ultra detailed, no watermark.`;
+
+  // 1. Próba przez Imagen 3 (:predict)
+  try {
+    const imagenUrl = `${config.apiBaseUrl}/models/imagen-3.0-generate-002:predict`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 16000);
+
+    const res = await fetch(imagenUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": config.apiKey,
+      },
+      body: JSON.stringify({
+        instances: [{ prompt }],
+        parameters: { sampleCount: 1, aspectRatio: "1:1" },
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      const data = await res.json();
+      const b64 = data?.predictions?.[0]?.bytesBase64Encoded;
+      if (b64) {
+        const binaryStr = atob(b64);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+        const stored = await uploadBufferToStorage(bytes, "image/jpeg", userId);
+        if (stored) return stored;
+      }
+    }
+  } catch {}
+
+  // 2. Próba przez modele multimodalne (:generateContent)
   const candidateModels = [
     config.imageModel,
+    "gemini-2.0-flash",
     "gemini-nano-banana-2.1",
     "gemini-3.1-flash-lite-image",
-    "gemini-3-flash-image",
   ].filter(Boolean);
 
   const cleanModels = [...new Set(candidateModels.map((m) => m.replace(/^models\//, "")))];
-
-  const prompt = `Close-up delicious food photography of ${dishTitle}, served fresh on a beautiful plate, natural studio kitchen lighting, appetizing, commercial food styling, no text, no watermark, ultra detailed.`;
 
   for (const model of cleanModels) {
     for (const modalities of [["TEXT", "IMAGE"], ["IMAGE"]]) {
       try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 18000);
+        const timer = setTimeout(() => controller.abort(), 16000);
 
         const url = `${config.apiBaseUrl}/models/${encodeURIComponent(model)}:generateContent`;
 
@@ -268,9 +359,7 @@ export async function generateAiDishImage(
         });
         clearTimeout(timer);
 
-        if (!res.ok) {
-          continue;
-        }
+        if (!res.ok) continue;
 
         const data = await res.json();
         const parts = data?.candidates?.[0]?.content?.parts ?? [];
@@ -318,7 +407,6 @@ export async function resolveRecipeImage(params: {
     return getCuratedFoodFallback("obiad");
   }
 
-  // 1. Tryb 'ai': najpierw model generowania obrazu, potem Commons z filtrem kulinarnym, na koniec curated
   if (params.mode === "ai") {
     const generated = await generateAiDishImage(params.config, query, params.userId);
     if (generated) return generated;
@@ -329,7 +417,6 @@ export async function resolveRecipeImage(params: {
     return getCuratedFoodFallback(query);
   }
 
-  // 2. Tryb 'web' lub 'auto': Commons z filtrem kulinarnym, potem AI, na koniec curated
   const web = await searchWebDishImage(query, params.userId);
   if (web) return web;
 

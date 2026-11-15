@@ -1,6 +1,11 @@
 import { loadGeminiConfig, GeminiConfigError } from "../_shared/geminiConfig.ts";
 import { generateStructuredRecipe, GeminiOperationError } from "../_shared/geminiClient.ts";
-import { resolveRecipeImage } from "../_shared/imageResolver.ts";
+import {
+  resolveRecipeImage,
+  searchWebFoodCandidates,
+  rehostExternalImage,
+  generateAiDishImage,
+} from "../_shared/imageResolver.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -44,6 +49,41 @@ Deno.serve(async (req: Request) => {
 
     const userId = typeof body.userId === "string" ? body.userId : undefined;
 
+    // Tryb wyszukiwania wielu zdjęć do wyboru dla użytkownika (Google/DuckDuckGo Images)
+    if (body.mode === "search-images") {
+      const query = String(body.query ?? body.title ?? "").trim();
+      if (!query) {
+        return new Response(
+          JSON.stringify({ code: "BAD_REQUEST", error: "Podaj nazwę potrawy do wyszukania zdjęć." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      const limit = typeof body.limit === "number" && body.limit > 0 ? Math.min(body.limit, 8) : 4;
+      const candidates = await searchWebFoodCandidates(query, limit);
+
+      return new Response(
+        JSON.stringify({ images: candidates }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // Tryb trwałego rehostingu wybranego zdjęcia do Supabase Storage
+    if (body.mode === "rehost-image") {
+      const externalUrl = String(body.image_url ?? body.url ?? "").trim();
+      if (!externalUrl) {
+        return new Response(
+          JSON.stringify({ code: "BAD_REQUEST", error: "Podaj adres URL zdjęcia do zapisania." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      const storedUrl = await rehostExternalImage(externalUrl, userId);
+
+      return new Response(
+        JSON.stringify({ image_url: storedUrl || externalUrl }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     // Tryb dedykowany: dobór lub generowanie zdjęcia potrawy
     if (body.mode === "generate-image") {
       const title = String(body.title ?? body.prompt ?? body.userPrompt ?? "").trim();
@@ -54,11 +94,34 @@ Deno.serve(async (req: Request) => {
         );
       }
       const forceGenerate = Boolean(body.forceGenerate);
-      const targetMode: "auto" | "web" | "ai" = forceGenerate ? "ai" : (body.imageMode ?? "web");
+
+      if (forceGenerate) {
+        const aiUrl = await generateAiDishImage(config, title, userId);
+        if (aiUrl) {
+          return new Response(
+            JSON.stringify({ image_url: aiUrl, source: "ai" }),
+            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
+        // Gdy generowanie AI nie powiodło się (np. darmowy klucz bez limitu obrazów),
+        // zwracamy 4 pasujące propozycje z sieci, aby użytkownik sam wybrał
+        const candidates = await searchWebFoodCandidates(title, 4);
+        return new Response(
+          JSON.stringify({
+            image_url: candidates[0]?.url || null,
+            ai_unavailable: true,
+            message: "Generowanie AI jest niedostępne na darmowym kluczu Google API. Wybierz jedno ze zdjęć z sieci.",
+            fallback_images: candidates,
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
       const imageUrl = await resolveRecipeImage({
         config,
         dishQuery: title,
-        mode: targetMode,
+        mode: "auto",
         userId,
       });
 

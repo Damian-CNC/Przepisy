@@ -730,18 +730,47 @@ function getClientCulinarySearchQueries(title: string): string[] {
   return [...new Set(queries.filter((q) => q.length >= 3))]
 }
 
-export async function resolveFoodCoverClientSide(
-  title: string,
-  category?: string | null,
-): Promise<string> {
-  const queries = getClientCulinarySearchQueries(title)
+export interface WebImageCandidate {
+  url: string
+  thumbnail: string
+  title: string
+}
+
+export async function searchFoodPhotoCandidates(
+  query: string,
+  limit = 4,
+): Promise<WebImageCandidate[]> {
+  const clean = cleanClientDishTitle(query)
+
+  // 1. Próba przez Edge Function (DuckDuckGo / Bing Image Search)
+  try {
+    const res = await invokeEdgeFunction<{ images?: WebImageCandidate[] }>(
+      'ai-recipe-assistant',
+      {
+        mode: 'search-images',
+        query: clean,
+        limit,
+      },
+      { timeoutMs: 6000 },
+    )
+    if (Array.isArray(res?.images) && res.images.length > 0) {
+      return res.images.slice(0, limit)
+    }
+  } catch {
+    // Fallback poniżej
+  }
+
+  // 2. Client-Side fallback przez Wikimedia Commons
+  const queries = getClientCulinarySearchQueries(clean)
+  const results: WebImageCandidate[] = []
 
   for (const q of queries) {
+    if (results.length >= limit) break
     const searchUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(q)}&gsrnamespace=6&gsrlimit=6&prop=imageinfo&iiprop=url|mime&format=json&origin=*`
 
     try {
       const controller = new AbortController()
-      const timer = window.setTimeout(() => controller.abort(), 4500)
+      const timer = window.setTimeout(() => controller.abort(), 4000)
       const res = await fetch(searchUrl, {
         headers: { Accept: 'application/json' },
         signal: controller.signal,
@@ -761,6 +790,7 @@ export async function resolveFoodCoverClientSide(
       const pages = Object.values((queryObj?.pages as Record<string, unknown>) ?? {})
 
       for (const p of pages) {
+        if (results.length >= limit) break
         const pageRecord = p as Record<string, unknown>
         const titleStr = typeof pageRecord.title === 'string' ? pageRecord.title : ''
         const imageinfoArr = pageRecord?.imageinfo as Array<Record<string, unknown>> | undefined
@@ -770,10 +800,14 @@ export async function resolveFoodCoverClientSide(
         if (
           candidateUrl &&
           (!mime || mime.startsWith('image/')) &&
-          isClientFoodPhotoCandidate(candidateUrl, titleStr)
+          isClientFoodPhotoCandidate(candidateUrl, titleStr) &&
+          !results.some((r) => r.url === candidateUrl)
         ) {
-          const safe = toSafeHttpUrl(candidateUrl)
-          if (safe) return safe
+          results.push({
+            url: candidateUrl,
+            thumbnail: candidateUrl,
+            title: titleStr.replace(/^File:/i, '').replace(/\.[^.]+$/, ''),
+          })
         }
       }
     } catch {
@@ -781,13 +815,57 @@ export async function resolveFoodCoverClientSide(
     }
   }
 
+  if (results.length > 0) {
+    return results
+  }
+
+  // 3. Ostateczny fallback: curated HD food cover
+  const fallback = getClientCuratedFoodCover(clean, null)
+  return [
+    {
+      url: fallback,
+      thumbnail: fallback,
+      title: clean,
+    },
+  ]
+}
+
+export async function rehostRecipeImage(imageUrl: string, recipeId?: string): Promise<string> {
+  const safe = toSafeHttpUrl(imageUrl)
+  if (!safe) throw new Error('Niepoprawny adres URL zdjęcia.')
+
+  // Próba rehostu do Supabase Storage przez Edge Function
+  try {
+    const res = await invokeEdgeFunction<{ image_url?: string }>(
+      'ai-recipe-assistant',
+      {
+        mode: 'rehost-image',
+        url: safe,
+        recipeId,
+      },
+      { timeoutMs: 8000 },
+    )
+    if (res?.image_url) {
+      return res.image_url
+    }
+  } catch {}
+
+  return safe
+}
+
+export async function resolveFoodCoverClientSide(
+  title: string,
+  category?: string | null,
+): Promise<string> {
+  const candidates = await searchFoodPhotoCandidates(title, 1)
+  if (candidates.length > 0 && candidates[0].url) {
+    return candidates[0].url
+  }
   return getClientCuratedFoodCover(title, category)
 }
 
 /**
  * Dobiera z sieci (a w ostateczności lub przy `forceGenerate: true` generuje przez AI) zdjęcie okładki dania.
- * Wyposażone w wielopoziomowy fallback (Edge Function -> Wikipedia/Commons Direct -> Curated HD Food),
- * gwarantując sukces w 100% przypadków.
  */
 export async function generateRecipeCoverImage(payload: {
   title: string
@@ -795,7 +873,7 @@ export async function generateRecipeCoverImage(payload: {
   category?: string | null
   forceGenerate?: boolean
   signal?: AbortSignal
-}): Promise<string> {
+}): Promise<{ imageUrl: string; aiUnavailable?: boolean }> {
   const title = payload.title.trim()
   if (!title) {
     throw new Error('Podaj nazwę potrawy, aby dobrać zdjęcie.')
@@ -814,25 +892,35 @@ export async function generateRecipeCoverImage(payload: {
       },
       {
         signal: payload.signal,
-        timeoutMs: 14000,
+        timeoutMs: 16000,
         authErrorMsg: 'Brak uprawnień do asystenta AI.',
       },
     )
 
+    if (envelope?.ai_unavailable) {
+      return {
+        imageUrl: toSafeHttpUrl(toNullableTrimmedString(envelope.image_url)) || '',
+        aiUnavailable: true,
+      }
+    }
+
     const imageUrl = toSafeHttpUrl(toNullableTrimmedString(envelope?.image_url))
     if (imageUrl) {
-      return imageUrl
+      return { imageUrl }
     }
   } catch (backendErr) {
-    console.warn(
-      'Backend image resolver niedostępny lub zwrócił błąd, przełączanie na bezpośredni dobór okładki w przeglądarce:',
-      backendErr,
-    )
+    console.warn('Backend image resolver unavailable:', backendErr)
   }
 
-  // 2. Bezpośredni resolver w przeglądarce (Wikipedia / Wikimedia Commons + Curated HD Food):
-  // Gwarancja: ZAWSZE zwraca wyśmienite zdjęcie potrawy, bez błędów i bez zależności od Edge Functions.
-  return await resolveFoodCoverClientSide(title, payload.category)
+  if (payload.forceGenerate) {
+    return {
+      imageUrl: '',
+      aiUnavailable: true,
+    }
+  }
+
+  const fallback = await resolveFoodCoverClientSide(title, payload.category)
+  return { imageUrl: fallback }
 }
 
 export interface RecipeEditDiffItem {

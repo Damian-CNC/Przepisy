@@ -556,13 +556,15 @@ export function SmartImportModal({
     setErrorMessage(null)
 
     try {
-      const imageUrl = await generateRecipeCoverImage({
+      const res = await generateRecipeCoverImage({
         title: previewDraft.title,
         description: previewDraft.description,
         category: previewDraft.category,
         forceGenerate,
       })
-      setPreviewDraft((prev) => (prev ? { ...prev, image_url: imageUrl } : prev))
+      if (res.imageUrl) {
+        setPreviewDraft((prev) => (prev ? { ...prev, image_url: res.imageUrl } : prev))
+      }
     } catch (err) {
       setErrorMessage(
         err instanceof Error && err.message
@@ -585,14 +587,16 @@ export function SmartImportModal({
     setErrorMessage(null)
 
     try {
-      const imageUrl = await generateRecipeCoverImage({
+      const res = await generateRecipeCoverImage({
         title: cleanTitle,
         description: manualDescription.trim() || null,
         category: manualCategory,
         forceGenerate,
       })
-      setManualCoverFile(null)
-      setManualGeneratedCoverUrl(imageUrl)
+      if (res.imageUrl) {
+        setManualCoverFile(null)
+        setManualGeneratedCoverUrl(res.imageUrl)
+      }
     } catch (err) {
       setErrorMessage(
         err instanceof Error && err.message
