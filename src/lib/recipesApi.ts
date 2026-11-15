@@ -673,97 +673,111 @@ function cleanClientDishTitle(raw: string): string {
     .trim()
 }
 
-function isClientFoodPhotoCandidate(url: string): boolean {
+function isClientFoodPhotoCandidate(url: string, title?: string): boolean {
   if (!url || typeof url !== 'string') return false
-  const lower = url.toLowerCase()
+  const combined = `${url} ${title ?? ''}`.toLowerCase()
   if (
-    lower.endsWith('.pdf') ||
-    lower.endsWith('.svg') ||
-    lower.endsWith('.gif') ||
-    lower.endsWith('.ogg') ||
-    lower.endsWith('.webm')
+    combined.endsWith('.pdf') ||
+    combined.endsWith('.svg') ||
+    combined.endsWith('.gif') ||
+    combined.endsWith('.ogg') ||
+    combined.endsWith('.webm') ||
+    combined.endsWith('.tif') ||
+    combined.endsWith('.tiff')
   ) {
     return false
   }
   const excluded = [
-    'map', 'mapa', 'flag', 'flaga', 'logo', 'diagram', 'icon', 'herb',
-    'chart', 'poster', 'portrait', 'stamp', 'sign', 'symbol', 'building',
-    'maklowicz', 'person', 'author', 'locator', 'location', 'schema',
+    'map', 'mapa', 'flag', 'flaga', 'logo', 'diagram', 'icon', 'ikona', 'herb',
+    'chart', 'poster', 'plakat', 'portrait', 'portret', 'stamp', 'znaczek', 'sign',
+    'symbol', 'building', 'budynek', 'maklowicz', 'person', 'osoba', 'poseł', 'posel',
+    'minister', 'sejm', 'senat', 'parliament', 'author', 'locator', 'location', 'schema',
+    'monument', 'pomnik', 'church', 'kościół', 'street', 'ulica', 'city', 'miasto',
+    'town', 'politician', 'polityk', 'deputy', 'gurudwara', 'temple', 'świątynia',
+    'still life', 'martwa natura', 'painting', 'obraz', 'drawing', 'rysunek',
+    'oil on canvas', 'sketch', 'szkic', 'museum', 'muzeum', 'eierdoos',
   ]
-  return !excluded.some((bad) => lower.includes(bad))
+  return !excluded.some((bad) => combined.includes(bad))
+}
+
+function getClientCulinarySearchQueries(title: string): string[] {
+  const clean = cleanClientDishTitle(title)
+  const words = clean.split(/\s+/)
+  const queries: string[] = []
+
+  const isBakery = /(?:chleb|bułk|naan|bagiet|ciast|tost|pancake|naleśnik|focaccia|pita|shokupan|chałk)/i.test(clean)
+  const isPasta = /(?:makaron|pasta|spaghetti|carbonara|penne|tagliatelle|lasagn|bolognese)/i.test(clean)
+  const isSoup = /(?:zupa|rosół|barszcz|krem|żur|gulasz)/i.test(clean)
+
+  if (isBakery) {
+    if (words.length > 1) queries.push(`${words[words.length - 1]} bread`)
+    queries.push(`${clean} bread`)
+  } else if (isPasta) {
+    if (words.length > 1) queries.push(`${words[words.length - 1]} pasta`)
+    queries.push(`${clean} pasta`)
+  } else if (isSoup) {
+    queries.push(`${clean} soup`)
+  }
+
+  queries.push(`${clean} food`)
+  queries.push(`${clean} dish`)
+  if (words.length > 1) {
+    queries.push(`${words[words.length - 1]} food`)
+    queries.push(`${words[words.length - 1]} dish`)
+  }
+  queries.push(clean)
+
+  return [...new Set(queries.filter((q) => q.length >= 3))]
 }
 
 export async function resolveFoodCoverClientSide(
   title: string,
   category?: string | null,
 ): Promise<string> {
-  const clean = cleanClientDishTitle(title)
-  const variants = [clean]
-  const words = clean.split(/\s+/)
-  if (words.length > 1) {
-    const lastWord = words[words.length - 1]
-    if (/^[A-Z]/.test(lastWord) || lastWord.length >= 4) {
-      variants.push(lastWord)
-    }
-    variants.push(words.slice(1).join(' '))
-  }
+  const queries = getClientCulinarySearchQueries(title)
 
-  const uniqueVariants = [...new Set(variants.filter((v) => v.length >= 3))]
+  for (const q of queries) {
+    const searchUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(q)}&gsrnamespace=6&gsrlimit=6&prop=imageinfo&iiprop=url|mime&format=json&origin=*`
 
-  for (const variant of uniqueVariants) {
-    const endpoints = [
-      `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(variant)}&gsrnamespace=6&gsrlimit=5&prop=imageinfo&iiprop=url|mime&format=json&origin=*`,
-      `https://pl.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(variant)}&gsrlimit=3&prop=pageimages&pithumbsize=1000&format=json&origin=*`,
-      `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(variant)}&gsrlimit=3&prop=pageimages&pithumbsize=1000&format=json&origin=*`,
-    ]
+    try {
+      const controller = new AbortController()
+      const timer = window.setTimeout(() => controller.abort(), 4500)
+      const res = await fetch(searchUrl, {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      })
+      window.clearTimeout(timer)
 
-    for (const ep of endpoints) {
+      if (!res.ok) continue
+      const text = await res.text()
+      let json: Record<string, unknown> | null = null
       try {
-        const controller = new AbortController()
-        const timer = window.setTimeout(() => controller.abort(), 4000)
-        const res = await fetch(ep, {
-          headers: { Accept: 'application/json' },
-          signal: controller.signal,
-        })
-        window.clearTimeout(timer)
-
-        if (!res.ok) continue
-        const text = await res.text()
-        let json: Record<string, unknown> | null = null
-        try {
-          json = JSON.parse(text) as Record<string, unknown>
-        } catch {
-          continue
-        }
-
-        const queryObj = json?.query as Record<string, unknown> | undefined
-        const pages = Object.values((queryObj?.pages as Record<string, unknown>) ?? {})
-
-        for (const p of pages) {
-          const pageRecord = p as Record<string, unknown>
-          const thumbObj = pageRecord?.thumbnail as Record<string, unknown> | undefined
-          const imageinfoArr = pageRecord?.imageinfo as Array<Record<string, unknown>> | undefined
-          const candidateUrl =
-            typeof thumbObj?.source === 'string'
-              ? thumbObj.source
-              : typeof imageinfoArr?.[0]?.url === 'string'
-                ? imageinfoArr[0].url
-                : ''
-
-          const mime = typeof imageinfoArr?.[0]?.mime === 'string' ? imageinfoArr[0].mime : ''
-
-          if (
-            candidateUrl &&
-            (!mime || mime.startsWith('image/')) &&
-            isClientFoodPhotoCandidate(candidateUrl)
-          ) {
-            const safe = toSafeHttpUrl(candidateUrl)
-            if (safe) return safe
-          }
-        }
+        json = JSON.parse(text) as Record<string, unknown>
       } catch {
         continue
       }
+
+      const queryObj = json?.query as Record<string, unknown> | undefined
+      const pages = Object.values((queryObj?.pages as Record<string, unknown>) ?? {})
+
+      for (const p of pages) {
+        const pageRecord = p as Record<string, unknown>
+        const titleStr = typeof pageRecord.title === 'string' ? pageRecord.title : ''
+        const imageinfoArr = pageRecord?.imageinfo as Array<Record<string, unknown>> | undefined
+        const candidateUrl = typeof imageinfoArr?.[0]?.url === 'string' ? imageinfoArr[0].url : ''
+        const mime = typeof imageinfoArr?.[0]?.mime === 'string' ? imageinfoArr[0].mime : ''
+
+        if (
+          candidateUrl &&
+          (!mime || mime.startsWith('image/')) &&
+          isClientFoodPhotoCandidate(candidateUrl, titleStr)
+        ) {
+          const safe = toSafeHttpUrl(candidateUrl)
+          if (safe) return safe
+        }
+      }
+    } catch {
+      continue
     }
   }
 

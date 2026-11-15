@@ -36,10 +36,6 @@ async function uploadBufferToStorage(
   return data?.publicUrl ?? null;
 }
 
-/**
- * 1. Pobiera zewnętrzny URL zdjęcia (np. og:image ze strony lub Instagrama)
- * i zapisuje go w Supabase Storage, aby uniknąć wygasania linków CDN i blokad CORS.
- */
 export async function rehostExternalImage(
   externalUrl: string,
   userId?: string,
@@ -83,43 +79,70 @@ function cleanDishTitle(raw: string): string {
     .trim();
 }
 
-function getSearchVariants(title: string): string[] {
+function getCulinarySearchQueries(title: string): string[] {
   const clean = cleanDishTitle(title);
-  const variants = [clean];
   const words = clean.split(/\s+/);
-  if (words.length > 1) {
-    const lastWord = words[words.length - 1];
-    if (/^[A-Z]/.test(lastWord) || lastWord.length >= 4) {
-      variants.push(lastWord);
-    }
-    variants.push(words.slice(1).join(" "));
+  const queries: string[] = [];
+
+  const isBakery = /(?:chleb|bułk|naan|bagiet|ciast|tost|pancake|naleśnik|focaccia|pita|shokupan|chałk)/i.test(clean);
+  const isPasta = /(?:makaron|pasta|spaghetti|carbonara|penne|tagliatelle|lasagn|bolognese)/i.test(clean);
+  const isSoup = /(?:zupa|rosół|barszcz|krem|żur|gulasz)/i.test(clean);
+
+  // Zawsze pierwszeństwo mają precyzyjne frazy kulinarne
+  if (isBakery) {
+    if (words.length > 1) queries.push(`${words[words.length - 1]} bread`);
+    queries.push(`${clean} bread`);
+  } else if (isPasta) {
+    if (words.length > 1) queries.push(`${words[words.length - 1]} pasta`);
+    queries.push(`${clean} pasta`);
+  } else if (isSoup) {
+    queries.push(`${clean} soup`);
   }
-  return [...new Set(variants.filter((v) => v.length >= 3))];
+
+  queries.push(`${clean} food`);
+  queries.push(`${clean} dish`);
+  if (words.length > 1) {
+    queries.push(`${words[words.length - 1]} food`);
+    queries.push(`${words[words.length - 1]} dish`);
+  }
+  queries.push(clean);
+
+  return [...new Set(queries.filter((q) => q.length >= 3))];
 }
 
-function isFoodPhotoCandidate(url: string): boolean {
+function isFoodPhotoCandidate(url: string, title?: string): boolean {
   if (!url || typeof url !== "string") return false;
-  const lower = url.toLowerCase();
+  const combined = `${url} ${title ?? ""}`.toLowerCase();
+
   if (
-    lower.endsWith(".pdf") ||
-    lower.endsWith(".svg") ||
-    lower.endsWith(".gif") ||
-    lower.endsWith(".ogg") ||
-    lower.endsWith(".webm")
+    combined.endsWith(".pdf") ||
+    combined.endsWith(".svg") ||
+    combined.endsWith(".gif") ||
+    combined.endsWith(".ogg") ||
+    combined.endsWith(".webm") ||
+    combined.endsWith(".tif") ||
+    combined.endsWith(".tiff")
   ) {
     return false;
   }
+
+  // Rygorystyczny filtr: odrzucenie polityków, osób, instytucji, świątyń, obrazów i martwych natur
   const excludedKeywords = [
-    "map", "mapa", "flag", "flaga", "logo", "diagram", "icon", "herb",
-    "chart", "poster", "portrait", "stamp", "sign", "symbol", "building",
-    "maklowicz", "person", "author", "locator", "location", "schema",
-    "monument", "church", "street", "city", "town"
+    "map", "mapa", "flag", "flaga", "logo", "diagram", "icon", "ikona", "herb",
+    "chart", "poster", "plakat", "portrait", "portret", "stamp", "znaczek", "sign",
+    "symbol", "building", "budynek", "maklowicz", "person", "osoba", "poseł", "posel",
+    "minister", "sejm", "senat", "parliament", "author", "locator", "location", "schema",
+    "monument", "pomnik", "church", "kościół", "street", "ulica", "city", "miasto",
+    "town", "politician", "polityk", "deputy", "gurudwara", "temple", "świątynia",
+    "still life", "martwa natura", "painting", "obraz", "drawing", "rysunek",
+    "oil on canvas", "sketch", "szkic", "museum", "muzeum", "eierdoos",
   ];
-  return !excludedKeywords.some((bad) => lower.includes(bad));
+
+  return !excludedKeywords.some((bad) => combined.includes(bad));
 }
 
 export const CURATED_FOOD_IMAGES: Array<{ pattern: RegExp; url: string }> = [
-  { pattern: /(?:chleb|bułk|shokupan|bagiet|pieczyw|toast|tost|chałk)/i, url: "https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=1200&q=80" },
+  { pattern: /(?:chleb|bułk|shokupan|naan|bagiet|pieczyw|toast|tost|chałk|flatbread)/i, url: "https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=1200&q=80" },
   { pattern: /(?:makaron|pasta|spaghetti|carbonara|penne|tagliatelle|lasagn|bolognese)/i, url: "https://images.unsplash.com/photo-1551183053-bf91a1d81141?auto=format&fit=crop&w=1200&q=80" },
   { pattern: /(?:pizza|focaccia)/i, url: "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=1200&q=80" },
   { pattern: /(?:burger|cheeseburger)/i, url: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=1200&q=80" },
@@ -142,71 +165,60 @@ export function getCuratedFoodFallback(query: string): string {
 }
 
 /**
- * 2. Wyszukuje zdjęcie dania w sieci (Wikimedia Commons + Wikipedia pl/en).
+ * 2. Wyszukuje zdjęcie dania w Wikimedia Commons (tylko pliki medialne z dopiskiem kulinarnym).
+ * Wyklucza artykuły Wikipedii, eliminując ryzyko pobrania portretu osoby lub polityka.
  */
 export async function searchWebDishImage(
   query: string,
   userId?: string,
 ): Promise<string | null> {
-  const variants = getSearchVariants(query);
+  const queries = getCulinarySearchQueries(query);
 
-  for (const variant of variants) {
-    const endpoints = [
-      `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(variant)}&gsrnamespace=6&gsrlimit=5&prop=imageinfo&iiprop=url|mime&format=json&origin=*`,
-      `https://pl.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(variant)}&gsrlimit=3&prop=pageimages&pithumbsize=1000&format=json&origin=*`,
-      `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(variant)}&gsrlimit=3&prop=pageimages&pithumbsize=1000&format=json&origin=*`,
-    ];
+  for (const q of queries) {
+    const searchUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(q)}&gsrnamespace=6&gsrlimit=6&prop=imageinfo&iiprop=url|mime&format=json&origin=*`;
 
-    for (const ep of endpoints) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch(searchUrl, {
+        headers: {
+          "User-Agent": "PrzepisyApp/2.0 (app@naszeprzepisy.pl)",
+          Accept: "application/json",
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      if (!res.ok) continue;
+      const text = await res.text();
+      let json: Record<string, unknown> | null = null;
       try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 6000);
-        const res = await fetch(ep, {
-          headers: {
-            "User-Agent": "PrzepisyApp/2.0 (app@naszeprzepisy.pl)",
-            Accept: "application/json",
-          },
-          signal: controller.signal,
-        });
-        clearTimeout(timer);
-
-        if (!res.ok) continue;
-        const text = await res.text();
-        let json: Record<string, unknown> | null = null;
-        try {
-          json = JSON.parse(text) as Record<string, unknown>;
-        } catch {
-          continue;
-        }
-
-        const queryObj = json?.query as Record<string, unknown> | undefined;
-        const pages = Object.values((queryObj?.pages as Record<string, unknown>) ?? {});
-
-        for (const p of pages) {
-          const pageRecord = p as Record<string, unknown>;
-          const thumbObj = pageRecord?.thumbnail as Record<string, unknown> | undefined;
-          const imageinfoArr = pageRecord?.imageinfo as Array<Record<string, unknown>> | undefined;
-          const candidateUrl =
-            typeof thumbObj?.source === "string"
-              ? thumbObj.source
-              : typeof imageinfoArr?.[0]?.url === "string"
-                ? imageinfoArr[0].url
-                : "";
-
-          const mime = typeof imageinfoArr?.[0]?.mime === "string" ? imageinfoArr[0].mime : "";
-
-          if (
-            candidateUrl &&
-            (!mime || mime.startsWith("image/")) &&
-            isFoodPhotoCandidate(candidateUrl)
-          ) {
-            const stored = await rehostExternalImage(candidateUrl, userId);
-            return stored || candidateUrl;
-          }
-        }
+        json = JSON.parse(text) as Record<string, unknown>;
       } catch {
         continue;
       }
+
+      const queryObj = json?.query as Record<string, unknown> | undefined;
+      const pages = Object.values((queryObj?.pages as Record<string, unknown>) ?? {});
+
+      for (const p of pages) {
+        const pageRecord = p as Record<string, unknown>;
+        const titleStr = typeof pageRecord.title === "string" ? pageRecord.title : "";
+        const imageinfoArr = pageRecord?.imageinfo as Array<Record<string, unknown>> | undefined;
+        const candidateUrl = typeof imageinfoArr?.[0]?.url === "string" ? imageinfoArr[0].url : "";
+        const mime = typeof imageinfoArr?.[0]?.mime === "string" ? imageinfoArr[0].mime : "";
+
+        if (
+          candidateUrl &&
+          (!mime || mime.startsWith("image/")) &&
+          isFoodPhotoCandidate(candidateUrl, titleStr)
+        ) {
+          const stored = await rehostExternalImage(candidateUrl, userId);
+          return stored || candidateUrl;
+        }
+      }
+    } catch {
+      continue;
     }
   }
 
@@ -230,67 +242,62 @@ export async function generateAiDishImage(
 
   const cleanModels = [...new Set(candidateModels.map((m) => m.replace(/^models\//, "")))];
 
-  const prompt = `Editorial overhead food photography of ${dishTitle}, served on a ceramic plate on a warm rustic table, natural soft daylight, appetizing, ultra realistic, professional culinary magazine style, no text, no watermark.`;
+  const prompt = `Close-up delicious food photography of ${dishTitle}, served fresh on a beautiful plate, natural studio kitchen lighting, appetizing, commercial food styling, no text, no watermark, ultra detailed.`;
 
   for (const model of cleanModels) {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 18000);
+    for (const modalities of [["TEXT", "IMAGE"], ["IMAGE"]]) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 18000);
 
-      const url = `${config.apiBaseUrl}/models/${encodeURIComponent(model)}:generateContent`;
+        const url = `${config.apiBaseUrl}/models/${encodeURIComponent(model)}:generateContent`;
 
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": config.apiKey,
-        },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: {
-            responseModalities: ["IMAGE"],
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": config.apiKey,
           },
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: {
+              responseModalities: modalities,
+            },
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
 
-      if (!res.ok) {
+        if (!res.ok) {
+          continue;
+        }
+
+        const data = await res.json();
+        const parts = data?.candidates?.[0]?.content?.parts ?? [];
+        const imagePart = parts.find(
+          (p: { inlineData?: { data?: string; mimeType?: string } }) => p.inlineData?.data,
+        );
+
+        if (!imagePart?.inlineData?.data) continue;
+
+        const mimeType = imagePart.inlineData.mimeType || "image/png";
+        const binaryStr = atob(imagePart.inlineData.data);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+
+        const stored = await uploadBufferToStorage(bytes, mimeType, userId);
+        if (stored) return stored;
+      } catch {
         continue;
       }
-
-      const data = await res.json();
-      const parts = data?.candidates?.[0]?.content?.parts ?? [];
-      const imagePart = parts.find(
-        (p: { inlineData?: { data?: string; mimeType?: string } }) => p.inlineData?.data,
-      );
-
-      if (!imagePart?.inlineData?.data) continue;
-
-      const mimeType = imagePart.inlineData.mimeType || "image/png";
-      const binaryStr = atob(imagePart.inlineData.data);
-      const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) {
-        bytes[i] = binaryStr.charCodeAt(i);
-      }
-
-      const stored = await uploadBufferToStorage(bytes, mimeType, userId);
-      if (stored) return stored;
-    } catch {
-      continue;
     }
   }
 
   return null;
 }
 
-/**
- * Główny resolver zdjęcia:
- * 1) Jeśli podano externalImageUrl -> re-hostuj do Supabase Storage.
- * 2) Jeśli tryb "ai" -> generuj przez AI, w razie braku limitów wyszukaj w sieci, na koniec curated fallback.
- * 3) Jeśli tryb "web" / "auto" -> szukaj w sieci, w razie braku wygeneruj przez AI, na koniec curated fallback.
- * Gwarancja: ZAWSZE zwraca poprawny adres URL zdjęcia dla podanej potrawy.
- */
 export async function resolveRecipeImage(params: {
   config: GeminiConfig;
   dishQuery: string;
@@ -311,6 +318,7 @@ export async function resolveRecipeImage(params: {
     return getCuratedFoodFallback("obiad");
   }
 
+  // 1. Tryb 'ai': najpierw model generowania obrazu, potem Commons z filtrem kulinarnym, na koniec curated
   if (params.mode === "ai") {
     const generated = await generateAiDishImage(params.config, query, params.userId);
     if (generated) return generated;
@@ -321,7 +329,7 @@ export async function resolveRecipeImage(params: {
     return getCuratedFoodFallback(query);
   }
 
-  // Domyślnie "auto" lub "web"
+  // 2. Tryb 'web' lub 'auto': Commons z filtrem kulinarnym, potem AI, na koniec curated
   const web = await searchWebDishImage(query, params.userId);
   if (web) return web;
 
