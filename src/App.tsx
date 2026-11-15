@@ -462,7 +462,7 @@ export function App() {
                   <div
                     role="group"
                     aria-label="Filtry kategorii przepisów"
-                    className="flex w-full items-center gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible"
+                    className="flex w-full items-center gap-2 overflow-x-auto py-2 -my-1 px-1 -mx-1 sm:flex-wrap sm:overflow-visible no-scrollbar"
                   >
                     {FILTER_OPTIONS.map((category) => {
                       const active = selectedFilter === category

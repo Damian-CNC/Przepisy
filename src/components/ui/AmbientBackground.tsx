@@ -21,24 +21,27 @@ export function AmbientBackground({ className }: AmbientBackgroundProps) {
       {/* Top-left sage / emerald culinary glow */}
       <div
         className={cn(
-          'ambient-blob-a absolute -top-28 -left-24 h-[30rem] w-[30rem] rounded-full blur-3xl',
-          'bg-emerald-200/60 dark:bg-emerald-900/35',
+          'ambient-blob-a absolute -top-28 -left-24 h-[32rem] w-[32rem] rounded-full blur-[100px]',
+          'bg-emerald-200/50 dark:bg-emerald-900/25',
+          'pointer-events-none',
         )}
       />
 
       {/* Center-right warm peach / amber glow */}
       <div
         className={cn(
-          'ambient-blob-b absolute top-1/4 -right-28 h-[34rem] w-[34rem] rounded-full blur-3xl',
-          'bg-orange-200/55 dark:bg-amber-800/25',
+          'ambient-blob-b absolute top-1/4 -right-28 h-[36rem] w-[36rem] rounded-full blur-[110px]',
+          'bg-orange-200/45 dark:bg-amber-800/20',
+          'pointer-events-none',
         )}
       />
 
       {/* Bottom-center creamy vanilla / deep sage anchor */}
       <div
         className={cn(
-          'ambient-blob-c absolute -bottom-32 left-1/4 h-[28rem] w-[36rem] rounded-full blur-3xl',
-          'bg-amber-100/75 dark:bg-teal-950/45',
+          'ambient-blob-c absolute -bottom-32 left-1/4 h-[30rem] w-[38rem] rounded-full blur-[100px]',
+          'bg-amber-100/60 dark:bg-teal-950/35',
+          'pointer-events-none',
         )}
       />
 

@@ -223,7 +223,11 @@ function normalizeIngredients(raw: unknown): RecipeIngredient[] {
     const rawAmount = Math.max(0, toFiniteNumber(record.amount, 0))
     const rawUnit = typeof record.unit === 'string' ? record.unit.trim() : ''
     const { amount, unit } = convertMeasurementToWeight(name, rawAmount, rawUnit)
-    const category = toNullableTrimmedString(record.category)
+    const rawCategory = toNullableTrimmedString(record.category)
+    const category =
+      rawCategory && !/^(mokre|suche|mokry|suchy|płynne|sypkie)$/i.test(rawCategory)
+        ? rawCategory
+        : undefined
 
     result.push(category ? { name, amount, unit, category } : { name, amount, unit })
   }
@@ -294,11 +298,27 @@ function normalizeSteps(raw: unknown): RecipeStep[] {
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue
     const record = item as Record<string, unknown>
-    const instruction = toNullableTrimmedString(record.instruction)
+    const instruction =
+      toNullableTrimmedString(record.instruction) ??
+      toNullableTrimmedString(record.text) ??
+      toNullableTrimmedString(record.description) ??
+      toNullableTrimmedString(record.step)
     if (!instruction) continue
 
-    const stepNumber = toNonNegativeInt(record.step_number, normalized.length + 1, 1)
-    const rawTimerSeconds = toNonNegativeInt(record.timer_seconds, 0, 0)
+    const stepNumber =
+      toNonNegativeInt(record.step_number, 0, 0) ||
+      toNonNegativeInt(record.order, 0, 0) ||
+      normalized.length + 1
+
+    const rawTimerMinutes =
+      typeof record.timerMinutes === 'number' && record.timerMinutes > 0
+        ? Math.round(record.timerMinutes * 60)
+        : 0
+
+    const rawTimerSeconds =
+      toNonNegativeInt(record.timer_seconds, 0, 0) ||
+      rawTimerMinutes
+
     const timerSeconds = sanitizeStepTimer(instruction, rawTimerSeconds)
     const stepIngredients = normalizeStepIngredients(record.step_ingredients)
     const tip = toNullableTrimmedString(record.tip)
@@ -467,8 +487,12 @@ function normalizeAiRecipeInsert(
       toSafeHttpUrl(defaults.sourceUrl),
     source_platform: defaults.sourcePlatform,
     image_url: toNullableTrimmedString(rawRecipe.image_url),
-    prep_time_minutes: toNonNegativeInt(rawRecipe.prep_time_minutes, 0, 0),
-    cook_time_minutes: toNonNegativeInt(rawRecipe.cook_time_minutes, 0, 0),
+    prep_time_minutes:
+      toNonNegativeInt(rawRecipe.prep_time_minutes, 0, 0) ||
+      toNonNegativeInt(rawRecipe.prepTimeMinutes, 0, 0),
+    cook_time_minutes:
+      toNonNegativeInt(rawRecipe.cook_time_minutes, 0, 0) ||
+      toNonNegativeInt(rawRecipe.cookTimeMinutes, 0, 0),
     servings: toNonNegativeInt(rawRecipe.servings, 2, 1),
     category,
     tags: normalizeTags(rawRecipe.tags),

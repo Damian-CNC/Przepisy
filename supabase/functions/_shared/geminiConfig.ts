@@ -51,8 +51,21 @@ function parseNonNegativeInt(
   return parsed;
 }
 
+const DEPRECATED_MODELS = new Set([
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-exp",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-latest",
+  "gemini-1.5-pro",
+]);
+
 export function normalizeModelName(model: string): string {
-  return model.trim().replace(/^models\//, "");
+  const cleaned = model.trim().replace(/^models\//, "");
+  if (DEPRECATED_MODELS.has(cleaned)) {
+    return "gemini-flash-latest";
+  }
+  return cleaned;
 }
 
 export function loadGeminiConfig(

@@ -81,42 +81,49 @@ export async function searchWebDishImage(
   userId?: string,
 ): Promise<string | null> {
   try {
-    const cleanQuery = query.trim();
-    if (!cleanQuery) return null;
+    const rawClean = query
+      .replace(/^(przepis na|jak zrobić|jak upiec|domowe|domowy|tradycyjny|klasyczny|prosty|szybki)\s+/i, "")
+      .trim();
+    if (!rawClean) return null;
 
-    const searchUrl = new URL("https://commons.wikimedia.org/w/api.php");
-    searchUrl.searchParams.set("action", "query");
-    searchUrl.searchParams.set("generator", "search");
-    searchUrl.searchParams.set("gsrsearch", `filetype:bitmap ${cleanQuery} food`);
-    searchUrl.searchParams.set("gsrnamespace", "6");
-    searchUrl.searchParams.set("gsrlimit", "3");
-    searchUrl.searchParams.set("prop", "imageinfo");
-    searchUrl.searchParams.set("iiprop", "url|mime");
-    searchUrl.searchParams.set("iiurlwidth", "960");
-    searchUrl.searchParams.set("format", "json");
-    searchUrl.searchParams.set("origin", "*");
+    // Próbujemy najpierw z dopiskiem food, a jeśli brak to samą nazwę
+    const searchQueries = [`filetype:bitmap ${rawClean} food`, `filetype:bitmap ${rawClean}`];
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 6000);
-    const res = await fetch(searchUrl.toString(), {
-      headers: { "User-Agent": "PrzepisyApp/1.0 (contact@example.com)" },
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
+    for (const sq of searchQueries) {
+      const searchUrl = new URL("https://commons.wikimedia.org/w/api.php");
+      searchUrl.searchParams.set("action", "query");
+      searchUrl.searchParams.set("generator", "search");
+      searchUrl.searchParams.set("gsrsearch", sq);
+      searchUrl.searchParams.set("gsrnamespace", "6");
+      searchUrl.searchParams.set("gsrlimit", "3");
+      searchUrl.searchParams.set("prop", "imageinfo");
+      searchUrl.searchParams.set("iiprop", "url|mime");
+      searchUrl.searchParams.set("iiurlwidth", "960");
+      searchUrl.searchParams.set("format", "json");
+      searchUrl.searchParams.set("origin", "*");
 
-    if (!res.ok) return null;
-    const json = await res.json();
-    const pages = Object.values(json?.query?.pages ?? {}) as Array<{
-      imageinfo?: Array<{ thumburl?: string; url?: string; mime?: string }>;
-    }>;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch(searchUrl.toString(), {
+        headers: { "User-Agent": "PrzepisyApp/1.0 (contact@example.com)" },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
 
-    for (const page of pages) {
-      const info = page.imageinfo?.[0];
-      const candidateUrl = info?.thumburl || info?.url;
-      if (candidateUrl) {
-        const stored = await rehostExternalImage(candidateUrl, userId);
-        if (stored) return stored;
-        return candidateUrl;
+      if (!res.ok) continue;
+      const json = await res.json();
+      const pages = Object.values(json?.query?.pages ?? {}) as Array<{
+        imageinfo?: Array<{ thumburl?: string; url?: string; mime?: string }>;
+      }>;
+
+      for (const page of pages) {
+        const info = page.imageinfo?.[0];
+        const candidateUrl = info?.thumburl || info?.url;
+        if (candidateUrl) {
+          const stored = await rehostExternalImage(candidateUrl, userId);
+          if (stored) return stored;
+          return candidateUrl;
+        }
       }
     }
     return null;

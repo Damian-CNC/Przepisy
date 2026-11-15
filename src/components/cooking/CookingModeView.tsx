@@ -19,7 +19,7 @@ import {
 } from 'lucide-react'
 import { useCookingTimers, type CookingTimer } from '../../hooks/useCookingTimers'
 import { useWakeLock } from '../../hooks/useWakeLock'
-import { formatScaledAmount } from '../../lib/recipesApi'
+import { formatScaledAmount, sanitizeStepTimer } from '../../lib/recipesApi'
 import type { RecipeRow, RecipeStep, RecipeUpdate } from '../../lib/supabase'
 import { AmbientBackground, GlassButton, GlassCard, GlassModal, GlassPill, cn } from '../ui'
 
@@ -94,7 +94,7 @@ export function CookingModeView({
           step_number: step?.step_number ?? (step as { order?: number })?.order ?? idx + 1,
           instruction: rawText,
           step_ingredients: Array.isArray(step?.step_ingredients) ? step.step_ingredients : [],
-          timer_seconds: rawTimer ?? 0,
+          timer_seconds: sanitizeStepTimer(rawText, rawTimer ?? 0),
           tip: step?.tip ?? null,
         }
       })

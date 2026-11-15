@@ -13,6 +13,7 @@ import {
   Lightbulb,
   Link2,
   Minus,
+  Pencil,
   Play,
   Plus,
   Settings,
@@ -32,6 +33,7 @@ import {
 import type { RecipeRow, RecipeUpdate } from '../../lib/supabase'
 import { GlassButton, GlassCard, GlassModal, GlassPill, cn } from '../ui'
 import { LinkedRecipesModal } from './LinkedRecipesModal'
+import { RecipeEditModal } from './RecipeEditModal'
 import { RecipeVoiceEditor } from './RecipeVoiceEditor'
 import { formatTimerLabel, getSourceMeta } from './recipeMeta'
 import { useWakeLock } from '../../hooks/useWakeLock'
@@ -86,6 +88,7 @@ export function RecipeDetailView({
   const [isVoiceEditorOpen, setIsVoiceEditorOpen] = useState(false)
   const [isLinkedModalOpen, setIsLinkedModalOpen] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
 
   const linkedRecipes = extractLinkedRecipes(recipe)
 
@@ -221,51 +224,21 @@ export function RecipeDetailView({
           aria-hidden="true"
         />
 
-        {!recipe.image_url && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4 pt-10">
-            <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2.5">
-              <GlassButton
-                type="button"
-                variant="secondary"
-                size="md"
-                isLoading={photoAction === 'search'}
-                disabled={photoAction === 'generate' || isUpdatingPhoto}
-                loadingText="Szukam zdjęcia..."
-                leftIcon={<Globe className="size-4 text-emerald-300" aria-hidden="true" />}
-                onClick={() => void handleResolveCoverPhoto(false)}
-                className="border-white/35 bg-zinc-950/65 text-white hover:bg-zinc-950/80 dark:border-white/25 dark:bg-zinc-950/75 dark:text-white"
-              >
-                Znajdź z sieci
-              </GlassButton>
-
-              <GlassButton
-                type="button"
-                variant="secondary"
-                size="md"
-                isLoading={photoAction === 'generate'}
-                disabled={photoAction === 'search' || isUpdatingPhoto}
-                loadingText="Generuję..."
-                leftIcon={<Sparkles className="size-4 text-amber-300" aria-hidden="true" />}
-                onClick={() => void handleResolveCoverPhoto(true)}
-                className="border-white/35 bg-zinc-950/65 text-white hover:bg-zinc-950/80 dark:border-white/25 dark:bg-zinc-950/75 dark:text-white"
-              >
-                Generuj zdjęcie
-              </GlassButton>
-            </div>
-          </div>
-        )}
-
         {/* Pasek górnych akcji na zdjęciu (z zapasem poniżej Dynamic Island na iPhone) */}
         <div className="absolute inset-x-0 top-0 z-10 mx-auto flex w-full max-w-4xl items-center justify-between gap-2 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] sm:px-6">
-          <GlassButton
-            variant="secondary"
-            size="md"
-            leftIcon={<ArrowLeft className="size-4" aria-hidden="true" />}
+          {/* Sama strzałka powrotna bez opisu */}
+          <button
+            type="button"
+            aria-label={hasPreviousRecipe ? 'Wróć do poprzedniego przepisu' : 'Wróć do listy przepisów'}
             onClick={onBack}
-            className="shrink-0 border-white/30 bg-zinc-950/65 text-white hover:bg-zinc-950/80 dark:border-white/25 dark:bg-zinc-950/70 dark:text-white"
+            className={cn(
+              'inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full',
+              'border border-white/30 bg-zinc-950/65 text-white backdrop-blur-xl hover:bg-zinc-950/80',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400',
+            )}
           >
-            {hasPreviousRecipe ? 'Wróć' : 'Przepisy'}
-          </GlassButton>
+            <ArrowLeft className="size-5" aria-hidden="true" />
+          </button>
 
           <div className="flex shrink-0 items-center gap-2">
             {/* Serduszko (Ulubione) — nie wychodzi poza ekran (Punkt 5) */}
@@ -399,7 +372,7 @@ export function RecipeDetailView({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
               {/* Przycisk Edytuj z AI przeniesiony do Trybu Edycji (Punkt 12) */}
               <GlassButton
                 type="button"
@@ -411,6 +384,17 @@ export function RecipeDetailView({
                 Edytuj z AI
               </GlassButton>
 
+              {/* Przycisk Edytuj przepis i kroki */}
+              <GlassButton
+                type="button"
+                variant="secondary"
+                size="md"
+                leftIcon={<Pencil className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />}
+                onClick={() => setIsEditModalOpen(true)}
+              >
+                Edytuj przepis i kroki
+              </GlassButton>
+
               {/* Przycisk Dodaj powiązany przepis przeniesiony do Trybu Edycji (Punkt 8) */}
               <GlassButton
                 type="button"
@@ -419,7 +403,7 @@ export function RecipeDetailView({
                 leftIcon={<Link2 className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />}
                 onClick={() => setIsLinkedModalOpen(true)}
               >
-                Dodaj powiązany przepis
+                Powiąż przepis
               </GlassButton>
 
               {/* Przycisk zmiany zdjęcia w Trybie Edycji */}
@@ -432,7 +416,7 @@ export function RecipeDetailView({
                 leftIcon={<ImagePlus className="size-4 shrink-0" />}
                 onClick={() => setIsPhotoOptionsOpen(true)}
               >
-                {recipe.image_url ? 'Podmień zdjęcie' : 'Dodaj zdjęcie'}
+                {recipe.image_url ? 'Podmień zdjęcie' : 'Dobierz zdjęcie'}
               </GlassButton>
             </div>
 
@@ -887,6 +871,16 @@ export function RecipeDetailView({
         allRecipes={allRecipes}
         onSave={async (newLinks) => {
           await onUpdateRecipe(recipe.id, { linked_recipes: newLinks })
+        }}
+      />
+
+      {/* Modal ręcznej edycji przepisu i kroków */}
+      <RecipeEditModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        recipe={recipe}
+        onSave={async (payload) => {
+          await onUpdateRecipe(recipe.id, payload)
         }}
       />
     </div>

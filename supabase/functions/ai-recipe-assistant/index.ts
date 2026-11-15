@@ -42,10 +42,35 @@ Deno.serve(async (req: Request) => {
     const config = loadGeminiConfig();
     const body = await req.json();
 
+    const userId = typeof body.userId === "string" ? body.userId : undefined;
+
+    // Tryb dedykowany: dobór lub generowanie zdjęcia potrawy
+    if (body.mode === "generate-image") {
+      const title = String(body.title ?? body.prompt ?? body.userPrompt ?? "").trim();
+      if (!title) {
+        return new Response(
+          JSON.stringify({ code: "BAD_REQUEST", error: "Podaj nazwę przepisu, aby wyszukać lub wygenerować zdjęcie." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      const forceGenerate = Boolean(body.forceGenerate);
+      const targetMode: "auto" | "web" | "ai" = forceGenerate ? "ai" : (body.imageMode ?? "web");
+      const imageUrl = await resolveRecipeImage({
+        config,
+        dishQuery: title,
+        mode: targetMode,
+        userId,
+      });
+
+      return new Response(
+        JSON.stringify({ image_url: imageUrl }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const mode = body.mode === "edit" ? "edit" : "create";
     const prompt = String(body.prompt ?? body.userPrompt ?? "").trim();
     const imageMode = (body.imageMode ?? (mode === "create" ? "auto" : "none")) as "auto" | "web" | "ai" | "none";
-    const userId = typeof body.userId === "string" ? body.userId : undefined;
 
     if (!prompt) {
       return new Response(

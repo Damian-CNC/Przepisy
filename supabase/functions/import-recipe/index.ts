@@ -51,25 +51,104 @@ Deno.serve(async (req: Request) => {
     let extractedImageUrl: string | null = null;
 
     if (rawUrl) {
-      try {
-        const pageController = new AbortController();
-        const pageTimer = setTimeout(() => pageController.abort(), 8000);
-        const pageRes = await fetch(rawUrl, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15",
-            "Accept-Language": "pl-PL,pl;q=0.9,en;q=0.8",
-          },
-          signal: pageController.signal,
-        });
-        clearTimeout(pageTimer);
+      const lowerUrl = rawUrl.toLowerCase();
+      const isInstagram = lowerUrl.includes("instagram.com") || lowerUrl.includes("instagr.am");
+      const apifyToken = Deno.env.get("APIFY_API_TOKEN");
 
-        if (pageRes.ok) {
-          const html = await pageRes.text();
-          extractedImageUrl = extractMetaImage(html, rawUrl);
-          fetchedContent = stripHtmlToText(html);
+      let gotInstagramCaption = false;
+
+      // 1. Ekstrakcja z Instagrama przez Apify (jeśli token jest skonfigurowany w Supabase Secrets)
+      if (isInstagram && apifyToken) {
+        try {
+          const apifyController = new AbortController();
+          const apifyTimer = setTimeout(() => apifyController.abort(), 15000);
+          const apifyRes = await fetch(
+            `https://api.apify.com/v2/acts/apify~instagram-post-scraper/run-sync-get-dataset-items?token=${encodeURIComponent(apifyToken)}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ username: [rawUrl], resultsLimit: 1 }),
+              signal: apifyController.signal,
+            },
+          );
+          clearTimeout(apifyTimer);
+
+          if (apifyRes.ok) {
+            const items = (await apifyRes.json()) as Array<Record<string, unknown>>;
+            if (Array.isArray(items) && items.length > 0) {
+              const firstItem = items[0];
+              const caption = typeof firstItem.caption === "string" ? firstItem.caption.trim() : "";
+              if (caption) {
+                fetchedContent += (fetchedContent ? "\n\n" : "") + `OPIS POSTA INSTAGRAM:\n${caption}`;
+                if (caption.length > 30) {
+                  gotInstagramCaption = true;
+                }
+              }
+
+              const candidateImg =
+                (typeof firstItem.displayUrl === "string" && firstItem.displayUrl) ||
+                (typeof firstItem.thumbnailUrl === "string" && firstItem.thumbnailUrl) ||
+                (typeof firstItem.thumbnailSrc === "string" && firstItem.thumbnailSrc) ||
+                (typeof firstItem.imageUrl === "string" && firstItem.imageUrl) ||
+                (typeof firstItem.coverUrl === "string" && firstItem.coverUrl);
+
+              if (candidateImg) {
+                extractedImageUrl = candidateImg;
+              }
+            }
+          }
+        } catch (err) {
+          console.warn("Apify Instagram fetch error:", err instanceof Error ? err.message : "unknown");
         }
-      } catch {
-        // Jeśli strona (np. Instagram) blokuje bezpośredni fetch, parsujemy z samego tekstu/tytułu udostępnienia
+      }
+
+      // 2. Jeśli nie mamy treści z Instagrama lub to zwykła strona WWW:
+      if (!gotInstagramCaption) {
+        try {
+          // Pobieramy przez czytnik Markdown Jina AI (omija blokady botów większości portali)
+          const jinaController = new AbortController();
+          const jinaTimer = setTimeout(() => jinaController.abort(), 10000);
+          const jinaRes = await fetch(`https://r.jina.ai/${rawUrl}`, {
+            headers: { Accept: "text/plain" },
+            signal: jinaController.signal,
+          });
+          clearTimeout(jinaTimer);
+
+          if (jinaRes.ok) {
+            const jinaText = (await jinaRes.text()).slice(0, 15000);
+            if (jinaText && jinaText.length > 60) {
+              fetchedContent += (fetchedContent ? "\n\n" : "") + jinaText;
+            }
+          }
+        } catch {
+          // Kontynuujemy ze standardowym fetchem HTML
+        }
+
+        if (!isInstagram && !fetchedContent) {
+          try {
+            const pageController = new AbortController();
+            const pageTimer = setTimeout(() => pageController.abort(), 8000);
+            const pageRes = await fetch(rawUrl, {
+              headers: {
+                "User-Agent":
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+                "Accept-Language": "pl-PL,pl;q=0.9,en;q=0.8",
+              },
+              signal: pageController.signal,
+            });
+            clearTimeout(pageTimer);
+
+            if (pageRes.ok) {
+              const html = await pageRes.text();
+              if (!extractedImageUrl) {
+                extractedImageUrl = extractMetaImage(html, rawUrl);
+              }
+              fetchedContent += (fetchedContent ? "\n\n" : "") + stripHtmlToText(html);
+            }
+          } catch {
+            // Kontynuujemy z danymi przesłanymi przez użytkownika
+          }
+        }
       }
     }
 

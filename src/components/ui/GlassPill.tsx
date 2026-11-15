@@ -39,11 +39,10 @@ const VARIANT_CLASSES: Record<GlassPillVariant, string> = {
     'dark:shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.12),0_12px_32px_0_rgba(0,0,0,0.45)]',
   ),
   active: cn(
-    'backdrop-blur-2xl backdrop-saturate-150',
+    'backdrop-blur-xl backdrop-saturate-150',
     'bg-stone-900 text-white dark:bg-amber-500 dark:text-zinc-950',
     'border border-white/25 dark:border-amber-300/40',
-    'shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.28),0_8px_24px_0_rgba(28,25,23,0.22)]',
-    'dark:shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.45),0_8px_24px_0_rgba(245,158,11,0.3)]',
+    'shadow-sm dark:shadow-[0_2px_10px_rgba(245,158,11,0.25)]',
   ),
   island: cn(
     'backdrop-blur-2xl backdrop-saturate-180',
