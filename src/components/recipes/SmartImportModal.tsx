@@ -17,6 +17,7 @@ import {
   ChefHat,
   ChevronRight,
   Clock,
+  Copy,
   ExternalLink,
   Globe,
   ImagePlus,
@@ -1580,12 +1581,30 @@ export function SmartImportModal({
               {activeTab === 'url' && (
                 <form onSubmit={handleAnalyzeUrl} className="flex flex-col gap-4">
                   <div className="flex flex-col gap-1.5">
-                    <label
-                      htmlFor={`${baseId}-import-url`}
-                      className="text-sm font-medium text-stone-800 dark:text-stone-200"
-                    >
-                      Link do rolki Instagrama lub strony z przepisem
-                    </label>
+                    <div className="flex items-center justify-between gap-2">
+                      <label
+                        htmlFor={`${baseId}-import-url`}
+                        className="text-sm font-medium text-stone-800 dark:text-stone-200"
+                      >
+                        Link do rolki Instagrama lub strony z przepisem
+                      </label>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const text = await navigator.clipboard?.readText()
+                            if (text) {
+                              setUrlInput(text.trim())
+                              setErrorMessage(null)
+                            }
+                          } catch {}
+                        }}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:underline dark:text-amber-400 cursor-pointer"
+                      >
+                        <Copy className="size-3" />
+                        <span>Wklej ze schowka</span>
+                      </button>
+                    </div>
                     <input
                       id={`${baseId}-import-url`}
                       name="url"

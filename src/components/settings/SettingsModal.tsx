@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  AlertCircle,
   Check,
   Copy,
   ExternalLink,
@@ -21,8 +20,6 @@ export interface SettingsModalProps {
   isSigningOut: boolean
   onSignOut: () => Promise<void> | void
 }
-
-type CopyStatus = 'idle' | 'copied' | 'failed'
 
 function resolveAppBaseUrl(): string {
   if (typeof window === 'undefined') {
@@ -65,19 +62,17 @@ export function SettingsModal({
   isSigningOut,
   onSignOut,
 }: SettingsModalProps) {
-  const [copyStatus, setCopyStatus] = useState<CopyStatus>('idle')
+  const [copiedType, setCopiedType] = useState<'standard' | 'chrome' | null>(null)
   const [statusAnnouncement, setStatusAnnouncement] = useState('')
 
   const copyTimerRef = useRef<number | null>(null)
   const lastAnnouncementRef = useRef('')
 
   const appBaseUrl = useMemo(() => resolveAppBaseUrl(), [])
-  const webappBaseUrl = useMemo(
-    () => appBaseUrl.replace(/^https?:\/\//, 'webapp://'),
-    [appBaseUrl],
-  )
-  const shortcutWebappUrl = `${webappBaseUrl}?importUrl=`
-  const shortcutTemplateUrl = `${shortcutWebappUrl}[Skrót z menu Udostępnij]`
+  const standardShortcutUrl = `${appBaseUrl}?importUrl=`
+  const standardTemplateUrl = `${standardShortcutUrl}[Skrót z menu Udostępnij]`
+  const chromeShortcutUrl = `${appBaseUrl.replace(/^https?:\/\//, 'googlechromes://')}?importUrl=`
+  const chromeTemplateUrl = `${chromeShortcutUrl}[Skrót z menu Udostępnij]`
 
   useEffect(() => {
     return () => {
@@ -93,49 +88,49 @@ export function SettingsModal({
       window.clearTimeout(copyTimerRef.current)
       copyTimerRef.current = null
     }
-    setCopyStatus('idle')
+    setCopiedType(null)
     setStatusAnnouncement('')
     onClose()
   }
 
-  const announceCopyResult = (nextStatus: 'copied' | 'failed') => {
+  const announceCopyResult = (type: 'standard' | 'chrome', success: boolean) => {
     if (copyTimerRef.current !== null) {
       window.clearTimeout(copyTimerRef.current)
     }
 
-    const baseMessage =
-      nextStatus === 'copied'
-        ? 'Skopiowano adres dla Skrótu iOS do schowka.'
-        : 'Nie udało się skopiować adresu. Zaznacz i skopiuj go ręcznie.'
+    const baseMessage = success
+      ? `Skopiowano adres dla ${type === 'chrome' ? 'Google Chrome' : 'Safari / domyślnej przeglądarki'}!`
+      : 'Nie udało się skopiować adresu. Zaznacz i skopiuj go ręcznie.'
 
     const uniqueAnnouncement =
       baseMessage === lastAnnouncementRef.current ? `${baseMessage}\u00A0` : baseMessage
     lastAnnouncementRef.current = baseMessage
 
-    setCopyStatus(nextStatus)
+    setCopiedType(success ? type : null)
     setStatusAnnouncement('')
     window.requestAnimationFrame(() => {
       setStatusAnnouncement(uniqueAnnouncement)
     })
 
     copyTimerRef.current = window.setTimeout(() => {
-      setCopyStatus('idle')
+      setCopiedType(null)
       setStatusAnnouncement('')
       copyTimerRef.current = null
     }, 2600)
   }
 
-  const handleCopyShortcutUrl = async () => {
+  const handleCopy = async (type: 'standard' | 'chrome') => {
+    const targetUrl = type === 'chrome' ? chromeShortcutUrl : standardShortcutUrl
     try {
       if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(shortcutWebappUrl)
-        announceCopyResult('copied')
+        await navigator.clipboard.writeText(targetUrl)
+        announceCopyResult(type, true)
         return
       }
       throw new Error('Brak Async Clipboard API')
     } catch {
-      const ok = legacyCopyToClipboard(shortcutWebappUrl)
-      announceCopyResult(ok ? 'copied' : 'failed')
+      const ok = legacyCopyToClipboard(targetUrl)
+      announceCopyResult(type, ok)
     }
   }
 
@@ -249,53 +244,83 @@ export function SettingsModal({
                   >
                     2
                   </span>
-                  <div className="min-w-0 flex-1 space-y-2.5">
+                  <div className="min-w-0 flex-1 space-y-3">
                     <div className="flex items-center gap-1.5 text-sm font-semibold text-stone-900 dark:text-stone-50">
                       <Link2 className="size-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden="true" />
                       <span>Dodaj akcję „URL” z szablonem aplikacji</span>
                     </div>
                     <p className="text-sm leading-relaxed text-stone-700 dark:text-stone-300">
-                      Wklej poniższy adres (z prefiksem <code>webapp://</code>), a zaraz po znaku <code>=</code> wstaw zmienną{' '}
+                      Wklej poniższy adres, a zaraz po znaku <code>=</code> wstaw zmienną{' '}
                       <strong>Skrót z menu Udostępnij</strong> (Shortcut Input):
                     </p>
 
-                    <div className="rounded-2xl border border-stone-900/10 bg-stone-950/5 px-3 py-2.5 text-xs font-mono break-all text-stone-800 select-all dark:border-white/10 dark:bg-black/35 dark:text-stone-200">
-                      {shortcutTemplateUrl}
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2.5">
+                    {/* Szablon Standard / Safari */}
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-stone-600 dark:text-stone-400">
+                        Opcja A: Standardowa (Safari / domyślna przeglądarka):
+                      </p>
+                      <div className="rounded-2xl border border-stone-900/10 bg-stone-950/5 px-3 py-2 text-xs font-mono break-all text-stone-800 select-all dark:border-white/10 dark:bg-black/35 dark:text-stone-200">
+                        {standardTemplateUrl}
+                      </div>
                       <GlassButton
                         type="button"
                         variant="primary"
-                        size="md"
+                        size="sm"
                         leftIcon={
-                          copyStatus === 'copied' ? (
-                            <Check className="size-4" aria-hidden="true" />
-                          ) : copyStatus === 'failed' ? (
-                            <AlertCircle className="size-4" aria-hidden="true" />
+                          copiedType === 'standard' ? (
+                            <Check className="size-3.5" aria-hidden="true" />
                           ) : (
-                            <Copy className="size-4" aria-hidden="true" />
+                            <Copy className="size-3.5" aria-hidden="true" />
                           )
                         }
-                        onClick={() => void handleCopyShortcutUrl()}
+                        onClick={() => void handleCopy('standard')}
                       >
-                        {copyStatus === 'copied'
-                          ? 'Skopiowano adres!'
-                          : 'Kopiuj adres dla Skrótu iOS (webapp://)'}
+                        {copiedType === 'standard'
+                          ? 'Skopiowano standardowy adres!'
+                          : 'Kopiuj standardowy adres (https://)'}
                       </GlassButton>
+                    </div>
 
-                      <span
+                    {/* Szablon dla Google Chrome */}
+                    <div className="space-y-1.5 pt-1 border-t border-stone-200 dark:border-white/10">
+                      <p className="text-xs font-medium text-stone-600 dark:text-stone-400">
+                        Opcja B: Bezpośrednio w Google Chrome (iOS):
+                      </p>
+                      <div className="rounded-2xl border border-stone-900/10 bg-stone-950/5 px-3 py-2 text-xs font-mono break-all text-stone-800 select-all dark:border-white/10 dark:bg-black/35 dark:text-stone-200">
+                        {chromeTemplateUrl}
+                      </div>
+                      <GlassButton
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        leftIcon={
+                          copiedType === 'chrome' ? (
+                            <Check className="size-3.5" aria-hidden="true" />
+                          ) : (
+                            <Copy className="size-3.5" aria-hidden="true" />
+                          )
+                        }
+                        onClick={() => void handleCopy('chrome')}
+                      >
+                        {copiedType === 'chrome'
+                          ? 'Skopiowano adres dla Chrome!'
+                          : 'Kopiuj adres dla Google Chrome (googlechromes://)'}
+                      </GlassButton>
+                    </div>
+
+                    {statusAnnouncement && (
+                      <p
                         role="status"
                         aria-live="polite"
                         className="text-xs font-medium text-emerald-700 dark:text-emerald-300"
                       >
                         {statusAnnouncement}
-                      </span>
-                    </div>
+                      </p>
+                    )}
 
-                    <p className="text-xs leading-relaxed text-stone-600 dark:text-stone-400">
-                      ✨ <strong>Dlaczego webapp://?</strong> Użycie <code>webapp://</code> zamiast <code>https://</code> sprawia, że iOS uruchamia bezpośrednio aplikację z ekranu początkowego w pełnoekranowym oknie PWA, zamiast otwierać Safari!
-                    </p>
+                    <div className="rounded-xl bg-amber-500/10 p-2.5 text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
+                      💡 <strong>Uwaga techniczna iOS:</strong> Nie używaj prefiksu <code>webapp://</code>. System iOS obcina z niego parametry adresu, przez co aplikacja z ekranu nie otrzymuje linku do rolki. Adresy powyżej gwarantują 100% automatyczne dodanie przepisu od razu po udostępnieniu!
+                    </div>
                   </div>
                 </div>
               </GlassCard>

@@ -4,6 +4,7 @@ import {
   AlertCircle,
   ChefHat,
   Heart,
+  Link2,
   Plus,
   RefreshCw,
   Search,
@@ -28,7 +29,10 @@ import { useAuth } from './hooks/useAuth'
 import { useRecipes } from './hooks/useRecipes'
 import { checkAndApplyPwaUpdate } from './lib/pwaUpdate'
 import {
+  checkClipboardForRecipeUrl,
   consumePendingSharePayload,
+  dismissClipboardUrl,
+  parseShareTargetFromLocation,
   parseShareTargetParams,
   peekPendingSharePayload,
   savePendingSharePayload,
@@ -89,9 +93,10 @@ export function App() {
   const [isManualRefreshing, setIsManualRefreshing] = useState(false)
   const [cookingSession, setCookingSession] = useState<CookingSessionState | null>(null)
   const [activeShareImport, setActiveShareImport] = useState<ActiveShareImportState | null>(null)
+  const [detectedClipboardUrl, setDetectedClipboardUrl] = useState<string | null>(null)
   const [pendingShareNotice, setPendingShareNotice] = useState<SharedImportPayload | null>(() => {
     if (typeof window === 'undefined') return null
-    const fromUrl = parseShareTargetParams(window.location.search)
+    const fromUrl = parseShareTargetFromLocation() ?? parseShareTargetParams(window.location.search)
     if (fromUrl) {
       savePendingSharePayload(fromUrl)
       return fromUrl
@@ -99,15 +104,60 @@ export function App() {
     return peekPendingSharePayload()
   })
 
+  // Nasłuchiwanie na nowe udostępnienia w URL oraz sprawdzanie schowka po powrocie do aplikacji
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const parsedShare = parseShareTargetParams(window.location.search)
-    if (!parsedShare) return
 
-    savePendingSharePayload(parsedShare)
-    const cleanUrl = `${window.location.pathname}${window.location.hash}`
-    window.history.replaceState({}, document.title, cleanUrl)
-  }, [])
+    const checkIncomingShare = async () => {
+      // 1. Sprawdź, czy w adresie URL (search, hash lub href) pojawił się parametr importUrl
+      const parsedShare = parseShareTargetFromLocation()
+      if (parsedShare) {
+        savePendingSharePayload(parsedShare)
+        const cleanUrl = `${window.location.pathname}${window.location.hash.split('?')[0]}`
+        window.history.replaceState({}, document.title, cleanUrl)
+        if (user && !isAuthLoading) {
+          setActiveShareImport({
+            url: parsedShare.url,
+            rawText: parsedShare.rawText,
+            autoAnalyze: true,
+          })
+          setIsImportModalOpen(true)
+        }
+        return
+      }
+
+      // 2. Jeśli brak w URL, a użytkownik jest zalogowany i nie ma otwartego modalu:
+      // Sprawdź, czy w schowku systemowym pojawił się link do Instagrama / przepisu
+      if (user && !isAuthLoading && !isImportModalOpen && document.visibilityState === 'visible') {
+        const clipboardUrl = await checkClipboardForRecipeUrl()
+        if (clipboardUrl) {
+          setDetectedClipboardUrl(clipboardUrl)
+        }
+      }
+    }
+
+    void checkIncomingShare()
+
+    const onVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        void checkIncomingShare()
+      }
+    }
+
+    window.addEventListener('visibilitychange', onVisibilityOrFocus)
+    window.addEventListener('focus', onVisibilityOrFocus)
+    window.addEventListener('pageshow', onVisibilityOrFocus)
+    window.addEventListener('popstate', onVisibilityOrFocus)
+    window.addEventListener('hashchange', onVisibilityOrFocus)
+
+    return () => {
+      window.removeEventListener('visibilitychange', onVisibilityOrFocus)
+      window.removeEventListener('focus', onVisibilityOrFocus)
+      window.removeEventListener('pageshow', onVisibilityOrFocus)
+      window.removeEventListener('popstate', onVisibilityOrFocus)
+      window.removeEventListener('hashchange', onVisibilityOrFocus)
+    }
+  }, [user, isAuthLoading, isImportModalOpen])
 
   useEffect(() => {
     if (isAuthLoading || !user) return
@@ -272,6 +322,62 @@ export function App() {
           />
         ) : (
           <>
+            {/* Pływający baner wykrytego linku ze schowka (dla Skrótów iOS / Chrome) */}
+            {detectedClipboardUrl && !isImportModalOpen && (
+              <aside
+                aria-label="Wykryto link ze schowka"
+                className="fixed top-4 inset-x-4 z-50 mx-auto max-w-lg"
+              >
+                <GlassCard variant="elevated" padding="sm" className="border-amber-500/50 shadow-2xl backdrop-blur-2xl">
+                  <div className="flex items-center justify-between gap-3 p-1">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-500 to-rose-500 text-white shadow-sm">
+                        <Link2 className="size-4.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-stone-900 dark:text-stone-50 truncate">
+                          Wykryto link z Instagrama w schowku!
+                        </p>
+                        <p className="text-xs text-stone-500 dark:text-stone-400 truncate">
+                          {detectedClipboardUrl}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <GlassButton
+                        size="sm"
+                        variant="primary"
+                        onClick={() => {
+                          const urlToAdd = detectedClipboardUrl
+                          dismissClipboardUrl(urlToAdd)
+                          setDetectedClipboardUrl(null)
+                          setActiveShareImport({
+                            url: urlToAdd,
+                            rawText: '',
+                            autoAnalyze: true,
+                          })
+                          setIsImportModalOpen(true)
+                        }}
+                      >
+                        Dodaj przepis
+                      </GlassButton>
+                      <button
+                        type="button"
+                        aria-label="Zamknij powiadomienie"
+                        onClick={() => {
+                          dismissClipboardUrl(detectedClipboardUrl)
+                          setDetectedClipboardUrl(null)
+                        }}
+                        className="rounded-lg p-1 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 transition-colors cursor-pointer"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </div>
+                  </div>
+                </GlassCard>
+              </aside>
+            )}
+
             {cookingSession && activeCookingRecipe ? (
               <Suspense
                 fallback={
