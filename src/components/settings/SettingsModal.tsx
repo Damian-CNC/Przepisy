@@ -72,8 +72,12 @@ export function SettingsModal({
   const lastAnnouncementRef = useRef('')
 
   const appBaseUrl = useMemo(() => resolveAppBaseUrl(), [])
-  const shortcutPrefixUrl = `${appBaseUrl}?importUrl=`
-  const shortcutTemplateUrl = `${shortcutPrefixUrl}[Skrót z menu Udostępnij]`
+  const webappBaseUrl = useMemo(
+    () => appBaseUrl.replace(/^https?:\/\//, 'webapp://'),
+    [appBaseUrl],
+  )
+  const shortcutWebappUrl = `${webappBaseUrl}?importUrl=`
+  const shortcutTemplateUrl = `${shortcutWebappUrl}[Skrót z menu Udostępnij]`
 
   useEffect(() => {
     return () => {
@@ -124,13 +128,13 @@ export function SettingsModal({
   const handleCopyShortcutUrl = async () => {
     try {
       if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(shortcutPrefixUrl)
+        await navigator.clipboard.writeText(shortcutWebappUrl)
         announceCopyResult('copied')
         return
       }
       throw new Error('Brak Async Clipboard API')
     } catch {
-      const ok = legacyCopyToClipboard(shortcutPrefixUrl)
+      const ok = legacyCopyToClipboard(shortcutWebappUrl)
       announceCopyResult(ok ? 'copied' : 'failed')
     }
   }
@@ -251,7 +255,7 @@ export function SettingsModal({
                       <span>Dodaj akcję „URL” z szablonem aplikacji</span>
                     </div>
                     <p className="text-sm leading-relaxed text-stone-700 dark:text-stone-300">
-                      Wklej poniższy początek adresu i zaraz po znaku <code>=</code> wstaw zmienną{' '}
+                      Wklej poniższy adres (z prefiksem <code>webapp://</code>), a zaraz po znaku <code>=</code> wstaw zmienną{' '}
                       <strong>Skrót z menu Udostępnij</strong> (Shortcut Input):
                     </p>
 
@@ -277,7 +281,7 @@ export function SettingsModal({
                       >
                         {copyStatus === 'copied'
                           ? 'Skopiowano adres!'
-                          : 'Kopiuj adres dla Skrótu iOS'}
+                          : 'Kopiuj adres dla Skrótu iOS (webapp://)'}
                       </GlassButton>
 
                       <span
@@ -288,6 +292,10 @@ export function SettingsModal({
                         {statusAnnouncement}
                       </span>
                     </div>
+
+                    <p className="text-xs leading-relaxed text-stone-600 dark:text-stone-400">
+                      ✨ <strong>Dlaczego webapp://?</strong> Użycie <code>webapp://</code> zamiast <code>https://</code> sprawia, że iOS uruchamia bezpośrednio aplikację z ekranu początkowego w pełnoekranowym oknie PWA, zamiast otwierać Safari!
+                    </p>
                   </div>
                 </div>
               </GlassCard>
