@@ -145,6 +145,9 @@ export function GlassModal({
       if (!dialog.open) {
         dialog.showModal()
       }
+      if (bodyScrollRef.current) {
+        bodyScrollRef.current.scrollTop = 0
+      }
     } else if (dialog.open) {
       void closeWithExitAnimation()
     }

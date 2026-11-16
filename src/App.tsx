@@ -202,13 +202,16 @@ export function App() {
   const handleSelectRecipe = (id: string) => {
     setRecipeHistory([id])
     setSelectedRecipeId(id)
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
+    }
   }
 
   const handleNavigateToLinkedRecipe = (targetId: string) => {
     setRecipeHistory((prev) => [...prev, targetId])
     setSelectedRecipeId(targetId)
     if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
     }
   }
 
@@ -218,11 +221,14 @@ export function App() {
       setRecipeHistory(nextHistory)
       setSelectedRecipeId(nextHistory[nextHistory.length - 1])
       if (typeof window !== 'undefined') {
-        window.scrollTo({ top: 0, behavior: 'smooth' })
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
       }
     } else {
       setRecipeHistory([])
       setSelectedRecipeId(null)
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
+      }
     }
   }
 
@@ -376,11 +382,11 @@ export function App() {
                       <GlassButton
                         variant="primary"
                         size="md"
-                        leftIcon={<Sparkles className="size-4" aria-hidden="true" />}
+                        leftIcon={<Plus className="size-4" aria-hidden="true" />}
                         onClick={() => setIsImportModalOpen(true)}
                         className="hidden sm:inline-flex"
                       >
-                        Dodaj przepis AI
+                        Dodaj przepis
                       </GlassButton>
 
                       {/* Ustawienia zawsze w prawym górnym rogu */}
@@ -396,16 +402,16 @@ export function App() {
                     </div>
                   </div>
 
-                  {/* Mobilny przycisk Dodaj przepis AI (jeden, bez duplikacji na dole) */}
+                  {/* Mobilny przycisk Dodaj przepis */}
                   <GlassButton
                     variant="primary"
                     size="md"
                     fullWidth
-                    leftIcon={<Sparkles className="size-4" aria-hidden="true" />}
+                    leftIcon={<Plus className="size-4" aria-hidden="true" />}
                     onClick={() => setIsImportModalOpen(true)}
                     className="sm:hidden"
                   >
-                    Dodaj przepis AI
+                    Dodaj przepis
                   </GlassButton>
 
                   {/* Pływający pasek wyszukiwania w semantycznym elemencie <search> */}

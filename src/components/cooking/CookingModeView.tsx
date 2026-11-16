@@ -114,6 +114,15 @@ export function CookingModeView({
 
   const prefersReducedMotion = useReducedMotion()
   useWakeLock(true)
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
+    }
+    if (mainContainerRef.current) {
+      mainContainerRef.current.scrollTop = 0
+    }
+  }, [recipe.id])
   const {
     timers,
     startTimer,

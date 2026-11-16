@@ -11,9 +11,11 @@ import {
 import { motion, useReducedMotion } from 'framer-motion'
 import {
   AlertCircle,
+  ArrowLeft,
   Camera,
   Check,
   ChefHat,
+  ChevronRight,
   Clock,
   ExternalLink,
   Globe,
@@ -59,14 +61,17 @@ export interface SmartImportModalProps {
   onAutoAnalyzeConsumed?: () => void
 }
 
+export type EntryChoice = 'choice' | 'ai' | 'manual'
+
 type ImportTabId = 'discover' | 'url' | 'photo' | 'manual'
 
-const TABS: ReadonlyArray<{ id: ImportTabId; label: string; Icon: typeof Link2 }> = [
+const AI_TABS: ReadonlyArray<{ id: ImportTabId; label: string; Icon: typeof Link2 }> = [
   { id: 'discover', label: 'Szef Kuchni AI', Icon: ChefHat },
   { id: 'url', label: 'Z linku / Instagrama', Icon: Link2 },
   { id: 'photo', label: 'Ze zdjęcia / Zrzutu', Icon: Camera },
-  { id: 'manual', label: 'Wpisz ręcznie', Icon: PenLine },
 ]
+
+const TABS = AI_TABS
 
 const CHEF_INSPIRATIONS: readonly string[] = [
   'Klasyczna carbonara',
@@ -167,6 +172,9 @@ export function SmartImportModal({
   const chefTextareaRef = useRef<HTMLTextAreaElement>(null)
   const prefersReducedMotion = useReducedMotion()
 
+  const [entryChoice, setEntryChoice] = useState<EntryChoice>(() =>
+    initialUrl || initialRawText || autoAnalyze ? 'ai' : 'choice',
+  )
   const [activeTab, setActiveTab] = useState<ImportTabId>('discover')
   const { canScrollStart: canTabsScrollStart, canScrollEnd: canTabsScrollEnd } = useScrollEdges(
     tablistRef,
@@ -272,6 +280,7 @@ export function SmartImportModal({
     setManualIngredients([createEmptyIngredient()])
     setManualSteps([createEmptyStep()])
     setPreviewDraft(null)
+    setEntryChoice('choice')
     setIsAnalyzing(false)
     setIsSaving(false)
     setIsReplacingPreviewCover(false)
@@ -404,12 +413,14 @@ export function SmartImportModal({
     wasOpenRef.current = true
 
     if ((hasIncomingContent || autoAnalyze) && (justOpened || autoAnalyze)) {
+      setEntryChoice('ai')
       setUrlInput(initialUrl)
       setRawTextInput(initialRawText)
       setActiveTab('url')
       setErrorMessage(null)
       setPreviewDraft(null)
     } else if (justOpened) {
+      setEntryChoice('choice')
       setActiveTab('discover')
     }
 
@@ -737,11 +748,23 @@ export function SmartImportModal({
     <GlassModal
       isOpen={isOpen}
       onClose={handleClose}
-      title={previewDraft ? 'Podgląd przetworzonego przepisu' : 'Dodaj nowy przepis'}
+      title={
+        previewDraft
+          ? 'Podgląd przetworzonego przepisu'
+          : entryChoice === 'choice'
+            ? 'Dodaj przepis'
+            : entryChoice === 'manual'
+              ? 'Wpisz przepis ręcznie'
+              : 'Dodaj przepis z AI'
+      }
       subtitle={
         previewDraft
           ? 'Sprawdź przetłumaczone składniki i kroki przed zapisaniem w bazie.'
-          : 'Opisz pomysł Szefowi Kuchni AI, wklej link, zrób zdjęcie lub wpisz przepis ręcznie.'
+          : entryChoice === 'choice'
+            ? 'Wybierz, w jaki sposób chcesz dodać przepis do Waszej książki.'
+            : entryChoice === 'manual'
+              ? 'Uzupełnij nazwę, opis, czas, składniki oraz kroki przygotowania.'
+              : 'Opisz pomysł Szefowi Kuchni AI, wklej link do rolki lub wgraj zdjęcie przepisu.'
       }
       size="lg"
       closedBy={isAnalyzing || isSaving ? 'none' : 'any'}
@@ -1123,32 +1146,137 @@ export function SmartImportModal({
               </GlassButton>
             </div>
           </form>
-        ) : (
-          /* 4 zakładki w szklanej kapsule (jednowierszowy przewijany pasek) */
-          <>
-            <div
-              className={cn(
-                'overflow-hidden rounded-full p-1.5',
-                'backdrop-blur-2xl backdrop-saturate-150',
-                'bg-stone-900/5 dark:bg-white/5',
-                'border border-white/45 dark:border-white/15',
-              )}
+        ) : entryChoice === 'choice' ? (
+          /* Ekran wyboru trybu: Wpisz normalnie (ręcznie) vs Dodaj z AI */
+          <div className="flex flex-col gap-4 py-2">
+            <GlassCard
+              variant="interactive"
+              padding="md"
+              onClick={() => {
+                setEntryChoice('manual')
+                setActiveTab('manual')
+              }}
+              className="group cursor-pointer border-amber-500/20 bg-gradient-to-br from-amber-500/5 via-transparent to-transparent hover:border-amber-500/40 transition-all hover:scale-[1.01]"
             >
+              <div className="flex items-start gap-4">
+                <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-700 dark:text-amber-300 group-hover:scale-105 transition-transform">
+                  <PenLine className="size-7" aria-hidden="true" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-base font-semibold text-stone-900 dark:text-stone-50">
+                      Wpisz normalnie (ręcznie)
+                    </h3>
+                    <ChevronRight className="size-5 text-amber-600 dark:text-amber-400 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                  <p className="mt-1 text-sm text-stone-600 dark:text-stone-300">
+                    Samodzielnie uzupełnij nazwę potrawy, czas, porcje, listę składników oraz kroki z minutnikiem.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    <GlassPill variant="tag" size="sm">Nazwa i opis</GlassPill>
+                    <GlassPill variant="tag" size="sm">Czas i porcje</GlassPill>
+                    <GlassPill variant="tag" size="sm">Składniki</GlassPill>
+                    <GlassPill variant="tag" size="sm">Kroki z minutnikiem</GlassPill>
+                  </div>
+                </div>
+              </div>
+            </GlassCard>
+
+            <GlassCard
+              variant="interactive"
+              padding="md"
+              onClick={() => {
+                setEntryChoice('ai')
+                setActiveTab('discover')
+              }}
+              className="group cursor-pointer border-orange-500/20 bg-gradient-to-br from-orange-500/5 via-transparent to-transparent hover:border-orange-500/40 transition-all hover:scale-[1.01]"
+            >
+              <div className="flex items-start gap-4">
+                <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-orange-500/15 text-orange-700 dark:text-orange-300 group-hover:scale-105 transition-transform">
+                  <Sparkles className="size-7" aria-hidden="true" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-base font-semibold text-stone-900 dark:text-stone-50">
+                      Dodaj z AI
+                    </h3>
+                    <ChevronRight className="size-5 text-orange-600 dark:text-orange-400 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                  <p className="mt-1 text-sm text-stone-600 dark:text-stone-300">
+                    Wykorzystaj sztuczną inteligencję – opisz pomysł szefowi kuchni, wklej link do rolki z Instagrama lub dodaj zdjęcie przepisu.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    <GlassPill variant="tag" size="sm">Szef Kuchni AI</GlassPill>
+                    <GlassPill variant="tag" size="sm">Z linku / Instagrama</GlassPill>
+                    <GlassPill variant="tag" size="sm">Ze zdjęcia / Zrzutu</GlassPill>
+                  </div>
+                </div>
+              </div>
+            </GlassCard>
+          </div>
+        ) : (
+          <>
+            {/* Pasek powrotu do wyboru trybu */}
+            <div className="flex items-center justify-between gap-2 pb-1">
+              <button
+                type="button"
+                onClick={() => setEntryChoice('choice')}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-600 hover:text-amber-700 dark:text-stone-400 dark:hover:text-amber-300 transition-colors cursor-pointer"
+              >
+                <ArrowLeft className="size-3.5" />
+                <span>Wróć do wyboru sposobu dodania</span>
+              </button>
+
+              {entryChoice === 'ai' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEntryChoice('manual')
+                    setActiveTab('manual')
+                  }}
+                  className="text-xs font-medium text-amber-700 hover:underline dark:text-amber-400 cursor-pointer"
+                >
+                  Wolisz wpisać ręcznie?
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEntryChoice('ai')
+                    setActiveTab('discover')
+                  }}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline dark:text-amber-400 cursor-pointer"
+                >
+                  <Sparkles className="size-3" />
+                  <span>Użyj asystenta AI</span>
+                </button>
+              )}
+            </div>
+
+            {entryChoice === 'ai' && (
               <div
-                ref={tablistRef}
-                role="tablist"
-                aria-label="Sposób dodania przepisu"
                 className={cn(
-                  'glass-scroll-fade-x flex flex-nowrap items-center gap-1.5 overflow-x-auto',
-                  canTabsScrollStart && 'can-scroll-start',
-                  canTabsScrollEnd && 'can-scroll-end',
+                  'overflow-hidden rounded-full p-1.5',
+                  'backdrop-blur-2xl backdrop-saturate-150',
+                  'bg-stone-900/5 dark:bg-white/5',
+                  'border border-white/45 dark:border-white/15',
                 )}
               >
-              {TABS.map((tab, index) => {
-                const isSelected = activeTab === tab.id
-                const TabIcon = tab.Icon
-                const tabDomId = `${baseId}-tab-${tab.id}`
-                const panelDomId = `${baseId}-panel-${tab.id}`
+                <div
+                  ref={tablistRef}
+                  role="tablist"
+                  aria-label="Sposób dodania przepisu"
+                  className={cn(
+                    'glass-scroll-fade-x flex flex-nowrap items-center gap-1.5 overflow-x-auto',
+                    canTabsScrollStart && 'can-scroll-start',
+                    canTabsScrollEnd && 'can-scroll-end',
+                  )}
+                >
+                {AI_TABS.map((tab, index) => {
+                  const isSelected = activeTab === tab.id
+                  const TabIcon = tab.Icon
+                  const tabDomId = `${baseId}-tab-${tab.id}`
+                  const panelDomId = `${baseId}-panel-${tab.id}`
 
                 return (
                   <button
@@ -1183,8 +1311,11 @@ export function SmartImportModal({
               })}
               </div>
             </div>
+            )}
 
-            {/* Panel 1: Szef Kuchni AI */}
+            {entryChoice === 'ai' && (
+              <>
+                {/* Panel 1: Szef Kuchni AI */}
             <div
               id={`${baseId}-panel-discover`}
               role="tabpanel"
@@ -1590,16 +1721,17 @@ export function SmartImportModal({
                 </form>
               )}
             </div>
+          </>
+        )}
 
-            {/* Panel 3: Wpisz ręcznie */}
-            <div
-              id={`${baseId}-panel-manual`}
-              role="tabpanel"
-              aria-labelledby={`${baseId}-tab-manual`}
-              hidden={activeTab !== 'manual'}
-            >
-              {activeTab === 'manual' && (
-                <form onSubmit={handleSaveManual} className="flex flex-col gap-5">
+        {/* Panel: Wpisz ręcznie */}
+        {entryChoice === 'manual' && (
+          <div
+            id={`${baseId}-panel-manual`}
+            role="region"
+            aria-label="Wpisz przepis ręcznie"
+          >
+            <form onSubmit={handleSaveManual} className="flex flex-col gap-5">
                   {/* Podstawowe dane */}
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="flex flex-col gap-1.5 sm:col-span-2">
@@ -2130,8 +2262,8 @@ export function SmartImportModal({
                     Zapisz w naszej książce
                   </GlassButton>
                 </form>
-              )}
-            </div>
+              </div>
+            )}
           </>
         )}
       </div>
