@@ -86,6 +86,28 @@ export type RecipeInsert = {
 
 export type RecipeUpdate = Partial<RecipeInsert>
 
+export type PendingShareRow = {
+  id: string
+  created_at: string
+  url: string
+  raw_text: string | null
+  source_platform: string | null
+  consumed: boolean
+  consumed_at: string | null
+}
+
+export type PendingShareInsert = {
+  id?: string
+  created_at?: string
+  url: string
+  raw_text?: string | null
+  source_platform?: string | null
+  consumed?: boolean
+  consumed_at?: string | null
+}
+
+export type PendingShareUpdate = Partial<PendingShareInsert>
+
 export type Database = {
   public: {
     Tables: {
@@ -93,6 +115,12 @@ export type Database = {
         Row: RecipeRow
         Insert: RecipeInsert
         Update: RecipeUpdate
+        Relationships: []
+      }
+      pending_shares: {
+        Row: PendingShareRow
+        Insert: PendingShareInsert
+        Update: PendingShareUpdate
         Relationships: []
       }
     }

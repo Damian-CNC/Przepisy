@@ -29,6 +29,10 @@ import { useAuth } from './hooks/useAuth'
 import { useRecipes } from './hooks/useRecipes'
 import { checkAndApplyPwaUpdate } from './lib/pwaUpdate'
 import {
+  fetchAndConsumePendingShare,
+  subscribeToPendingShares,
+} from './lib/pendingShares'
+import {
   checkClipboardForRecipeUrl,
   consumePendingSharePayload,
   dismissClipboardUrl,
@@ -126,8 +130,21 @@ export function App() {
         return
       }
 
-      // 2. Jeśli brak w URL, a użytkownik jest zalogowany i nie ma otwartego modalu:
-      // Sprawdź, czy w schowku systemowym pojawił się link do Instagrama / przepisu
+      // 2. Sprawdź kolejkę bezobsługową w Supabase (gdy Skrót iOS dodał link do bazy)
+      if (user && !isAuthLoading && !isImportModalOpen) {
+        const pendingShare = await fetchAndConsumePendingShare()
+        if (pendingShare && pendingShare.url) {
+          setActiveShareImport({
+            url: pendingShare.url,
+            rawText: pendingShare.rawText,
+            autoAnalyze: true,
+          })
+          setIsImportModalOpen(true)
+          return
+        }
+      }
+
+      // 3. Jeśli brak w kolejce, sprawdź schowek jako rezerwowe rozwiązanie
       if (user && !isAuthLoading && !isImportModalOpen && document.visibilityState === 'visible') {
         const clipboardUrl = await checkClipboardForRecipeUrl()
         if (clipboardUrl) {
@@ -158,6 +175,26 @@ export function App() {
       window.removeEventListener('hashchange', onVisibilityOrFocus)
     }
   }, [user, isAuthLoading, isImportModalOpen])
+
+  // Subskrypcja na żywo do kolejki pending_shares (dla natychmiastowego otwarcia, gdy aplikacja jest już włączona)
+  useEffect(() => {
+    if (!user || isAuthLoading) return
+
+    const unsubscribe = subscribeToPendingShares((share) => {
+      if (share.url) {
+        setActiveShareImport({
+          url: share.url,
+          rawText: share.rawText,
+          autoAnalyze: true,
+        })
+        setIsImportModalOpen(true)
+      }
+    })
+
+    return () => {
+      unsubscribe()
+    }
+  }, [user, isAuthLoading])
 
   useEffect(() => {
     if (isAuthLoading || !user) return

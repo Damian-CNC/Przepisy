@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Check,
   Copy,
   ExternalLink,
   Link2,
@@ -62,7 +61,7 @@ export function SettingsModal({
   isSigningOut,
   onSignOut,
 }: SettingsModalProps) {
-  const [copiedType, setCopiedType] = useState<'standard' | 'chrome' | null>(null)
+  const [copiedType, setCopiedType] = useState<'standard' | 'chrome' | 'queueUrl' | 'anonKey' | null>(null)
   const [statusAnnouncement, setStatusAnnouncement] = useState('')
 
   const copyTimerRef = useRef<number | null>(null)
@@ -70,9 +69,11 @@ export function SettingsModal({
 
   const appBaseUrl = useMemo(() => resolveAppBaseUrl(), [])
   const standardShortcutUrl = `${appBaseUrl}?importUrl=`
-  const standardTemplateUrl = `${standardShortcutUrl}[Skrót z menu Udostępnij]`
   const chromeShortcutUrl = `${appBaseUrl.replace(/^https?:\/\//, 'googlechromes://')}?importUrl=`
   const chromeTemplateUrl = `${chromeShortcutUrl}[Skrót z menu Udostępnij]`
+
+  const supabaseQueueUrl = 'https://itordauatieafxhqbxfi.supabase.co/rest/v1/pending_shares'
+  const supabaseAnonKey = 'sb_publishable_LjydtS7mOXN5cpBR5t3AIw_oyCm4p1d'
 
   useEffect(() => {
     return () => {
@@ -93,14 +94,24 @@ export function SettingsModal({
     onClose()
   }
 
-  const announceCopyResult = (type: 'standard' | 'chrome', success: boolean) => {
+  const announceCopyResult = (
+    type: 'standard' | 'chrome' | 'queueUrl' | 'anonKey',
+    success: boolean,
+  ) => {
     if (copyTimerRef.current !== null) {
       window.clearTimeout(copyTimerRef.current)
     }
 
+    const typeLabels: Record<typeof type, string> = {
+      standard: 'standardowy adres',
+      chrome: 'adres dla Google Chrome',
+      queueUrl: 'adres URL kolejki Supabase',
+      anonKey: 'klucz API (apikey)',
+    }
+
     const baseMessage = success
-      ? `Skopiowano adres dla ${type === 'chrome' ? 'Google Chrome' : 'Safari / domyślnej przeglądarki'}!`
-      : 'Nie udało się skopiować adresu. Zaznacz i skopiuj go ręcznie.'
+      ? `Skopiowano ${typeLabels[type]} do schowka!`
+      : 'Nie udało się skopiować. Zaznacz i skopiuj ręcznie.'
 
     const uniqueAnnouncement =
       baseMessage === lastAnnouncementRef.current ? `${baseMessage}\u00A0` : baseMessage
@@ -119,17 +130,21 @@ export function SettingsModal({
     }, 2600)
   }
 
-  const handleCopy = async (type: 'standard' | 'chrome') => {
-    const targetUrl = type === 'chrome' ? chromeShortcutUrl : standardShortcutUrl
+  const handleCopy = async (type: 'standard' | 'chrome' | 'queueUrl' | 'anonKey') => {
+    let targetText = standardShortcutUrl
+    if (type === 'chrome') targetText = chromeShortcutUrl
+    else if (type === 'queueUrl') targetText = supabaseQueueUrl
+    else if (type === 'anonKey') targetText = supabaseAnonKey
+
     try {
       if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(targetUrl)
+        await navigator.clipboard.writeText(targetText)
         announceCopyResult(type, true)
         return
       }
       throw new Error('Brak Async Clipboard API')
     } catch {
-      const ok = legacyCopyToClipboard(targetUrl)
+      const ok = legacyCopyToClipboard(targetText)
       announceCopyResult(type, ok)
     }
   }
@@ -244,68 +259,106 @@ export function SettingsModal({
                   >
                     2
                   </span>
-                  <div className="min-w-0 flex-1 space-y-3">
+                  <div className="min-w-0 flex-1 space-y-3.5">
                     <div className="flex items-center gap-1.5 text-sm font-semibold text-stone-900 dark:text-stone-50">
-                      <Link2 className="size-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden="true" />
-                      <span>Dodaj akcję „URL” z szablonem aplikacji</span>
+                      <Sparkles className="size-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden="true" />
+                      <span>Metoda 1: 100% Bezobsługowa z pulpitu (Zalecana)</span>
                     </div>
                     <p className="text-sm leading-relaxed text-stone-700 dark:text-stone-300">
-                      Wklej poniższy adres, a zaraz po znaku <code>=</code> wstaw zmienną{' '}
-                      <strong>Skrót z menu Udostępnij</strong> (Shortcut Input):
+                      W Skrócie dodaj akcję <strong>„Pobierz zawartość adresu URL”</strong> (POST), która w ułamku sekundy przekazuje rolkę do bazy i otwiera aplikację z ekranu początkowego:
                     </p>
 
-                    {/* Szablon Standard / Safari */}
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-stone-600 dark:text-stone-400">
-                        Opcja A: Standardowa (Safari / domyślna przeglądarka):
-                      </p>
-                      <div className="rounded-2xl border border-stone-900/10 bg-stone-950/5 px-3 py-2 text-xs font-mono break-all text-stone-800 select-all dark:border-white/10 dark:bg-black/35 dark:text-stone-200">
-                        {standardTemplateUrl}
+                    {/* Szczegóły żądania POST */}
+                    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3 space-y-2.5 dark:border-amber-400/20 dark:bg-amber-500/10">
+                      <div>
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
+                          1. Adres URL kolejki (metoda POST):
+                        </span>
+                        <div className="mt-1 rounded-xl border border-stone-900/10 bg-white/60 px-3 py-1.5 text-xs font-mono break-all text-stone-800 dark:border-white/10 dark:bg-black/40 dark:text-stone-200">
+                          {supabaseQueueUrl}
+                        </div>
+                        <div className="mt-1.5">
+                          <GlassButton
+                            type="button"
+                            variant="primary"
+                            size="sm"
+                            leftIcon={<Copy className="size-3.5" />}
+                            onClick={() => void handleCopy('queueUrl')}
+                          >
+                            {copiedType === 'queueUrl' ? 'Skopiowano adres URL!' : 'Kopiuj adres kolejki'}
+                          </GlassButton>
+                        </div>
                       </div>
-                      <GlassButton
-                        type="button"
-                        variant="primary"
-                        size="sm"
-                        leftIcon={
-                          copiedType === 'standard' ? (
-                            <Check className="size-3.5" aria-hidden="true" />
-                          ) : (
-                            <Copy className="size-3.5" aria-hidden="true" />
-                          )
-                        }
-                        onClick={() => void handleCopy('standard')}
-                      >
-                        {copiedType === 'standard'
-                          ? 'Skopiowano standardowy adres!'
-                          : 'Kopiuj standardowy adres (https://)'}
-                      </GlassButton>
+
+                      <div className="pt-2 border-t border-amber-500/20">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
+                          2. Nagłówki żądania (Headers):
+                        </span>
+                        <div className="mt-1 space-y-1 text-xs font-mono text-stone-700 dark:text-stone-300">
+                          <div><strong>Content-Type:</strong> application/json</div>
+                          <div className="break-all"><strong>apikey:</strong> {supabaseAnonKey}</div>
+                        </div>
+                        <div className="mt-1.5">
+                          <GlassButton
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            leftIcon={<Copy className="size-3.5" />}
+                            onClick={() => void handleCopy('anonKey')}
+                          >
+                            {copiedType === 'anonKey' ? 'Skopiowano klucz!' : 'Kopiuj klucz API (apikey)'}
+                          </GlassButton>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-amber-500/20">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
+                          3. Treść żądania (JSON):
+                        </span>
+                        <p className="mt-1 text-xs text-stone-600 dark:text-stone-300">
+                          Dodaj pole o kluczu <code>url</code> i jako wartość wstaw <strong>Dane wejściowe skrótu</strong>.
+                        </p>
+                      </div>
+
+                      <div className="pt-2 border-t border-amber-500/20">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
+                          4. Następna akcja w Skrócie:
+                        </span>
+                        <p className="mt-1 text-xs font-medium text-amber-900 dark:text-amber-200">
+                          Dodaj akcję <strong>„Otwórz aplikację”</strong> → wybierz <strong>Nasze Przepisy</strong> (skrót z ekranu).
+                        </p>
+                      </div>
                     </div>
 
-                    {/* Szablon dla Google Chrome */}
-                    <div className="space-y-1.5 pt-1 border-t border-stone-200 dark:border-white/10">
-                      <p className="text-xs font-medium text-stone-600 dark:text-stone-400">
-                        Opcja B: Bezpośrednio w Google Chrome (iOS):
-                      </p>
-                      <div className="rounded-2xl border border-stone-900/10 bg-stone-950/5 px-3 py-2 text-xs font-mono break-all text-stone-800 select-all dark:border-white/10 dark:bg-black/35 dark:text-stone-200">
+                    {/* Metoda alternatywna: przez link URL w przeglądarce */}
+                    <div className="pt-2 border-t border-stone-200 dark:border-white/10 space-y-2">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-stone-700 dark:text-stone-300">
+                        <Link2 className="size-3.5" />
+                        <span>Metoda 2: Bezpośrednio przez Google Chrome (akcja Otwórz adresy URL)</span>
+                      </div>
+                      <div className="rounded-xl border border-stone-900/10 bg-stone-950/5 px-3 py-1.5 text-xs font-mono break-all text-stone-800 select-all dark:border-white/10 dark:bg-black/35 dark:text-stone-200">
                         {chromeTemplateUrl}
                       </div>
-                      <GlassButton
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        leftIcon={
-                          copiedType === 'chrome' ? (
-                            <Check className="size-3.5" aria-hidden="true" />
-                          ) : (
-                            <Copy className="size-3.5" aria-hidden="true" />
-                          )
-                        }
-                        onClick={() => void handleCopy('chrome')}
-                      >
-                        {copiedType === 'chrome'
-                          ? 'Skopiowano adres dla Chrome!'
-                          : 'Kopiuj adres dla Google Chrome (googlechromes://)'}
-                      </GlassButton>
+                      <div className="flex flex-wrap gap-2">
+                        <GlassButton
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          leftIcon={<Copy className="size-3.5" />}
+                          onClick={() => void handleCopy('chrome')}
+                        >
+                          {copiedType === 'chrome' ? 'Skopiowano adres Chrome!' : 'Kopiuj link dla Chrome'}
+                        </GlassButton>
+                        <GlassButton
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          leftIcon={<Copy className="size-3.5" />}
+                          onClick={() => void handleCopy('standard')}
+                        >
+                          {copiedType === 'standard' ? 'Skopiowano!' : 'Kopiuj link https:// (Safari)'}
+                        </GlassButton>
+                      </div>
                     </div>
 
                     {statusAnnouncement && (
@@ -317,10 +370,6 @@ export function SettingsModal({
                         {statusAnnouncement}
                       </p>
                     )}
-
-                    <div className="rounded-xl bg-amber-500/10 p-2.5 text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
-                      💡 <strong>Uwaga techniczna iOS:</strong> Nie używaj prefiksu <code>webapp://</code>. System iOS obcina z niego parametry adresu, przez co aplikacja z ekranu nie otrzymuje linku do rolki. Adresy powyżej gwarantują 100% automatyczne dodanie przepisu od razu po udostępnieniu!
-                    </div>
                   </div>
                 </div>
               </GlassCard>

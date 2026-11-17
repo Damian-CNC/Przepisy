@@ -123,3 +123,52 @@ $$;
 -- 5. Bezpieczna migracja istniejących instancji bazy: dodanie kolumny powiązanych przepisów
 alter table public.recipes add column if not exists linked_recipes jsonb not null default '[]'::jsonb;
 
+-- 6. Kolejka bezobsługowego udostępniania przepisów ze Skrótów iOS do PWA
+create table if not exists public.pending_shares (
+    id uuid primary key default uuid_generate_v4(),
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+    url text not null,
+    raw_text text default '',
+    source_platform text default 'instagram',
+    consumed boolean default false,
+    consumed_at timestamp with time zone
+);
+
+create index if not exists pending_shares_active_idx 
+    on public.pending_shares (consumed, created_at desc);
+
+alter table public.pending_shares enable row level security;
+
+drop policy if exists "Anonimowy zapis ze Skrotu Apple" on public.pending_shares;
+create policy "Anonimowy zapis ze Skrotu Apple"
+on public.pending_shares
+for insert
+to anon
+with check (true);
+
+drop policy if exists "Zalogowani domownicy obsluguja kolejke" on public.pending_shares;
+create policy "Zalogowani domownicy obsluguja kolejke"
+on public.pending_shares
+for all
+to authenticated
+using (true)
+with check (true);
+
+alter table public.pending_shares replica identity full;
+
+do $$
+begin
+    if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+       and not exists (
+           select 1
+           from pg_publication_tables
+           where pubname = 'supabase_realtime'
+             and schemaname = 'public'
+             and tablename = 'pending_shares'
+       ) then
+        alter publication supabase_realtime add table public.pending_shares;
+    end if;
+end
+$$;
+
+
