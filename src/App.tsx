@@ -18,6 +18,9 @@ import { RecipeDetailView } from './components/recipes/RecipeDetailView'
 import { RECIPE_CATEGORIES } from './components/recipes/recipeMeta'
 import { SmartImportModal } from './components/recipes/SmartImportModal'
 import { SettingsModal } from './components/settings/SettingsModal'
+import { BottomTabBar, type NavigationTab } from './components/navigation/BottomTabBar'
+import { PizzaCalculatorView } from './components/pizza/PizzaCalculatorView'
+import { TinctureCalculatorView } from './components/tinctures/TinctureCalculatorView'
 import {
   AmbientBackground,
   GlassButton,
@@ -91,6 +94,7 @@ export function App() {
   const [selectedFilter, setSelectedFilter] = useState<FilterOption>('Wszystkie')
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null)
   const [recipeHistory, setRecipeHistory] = useState<string[]>([])
+  const [activeTab, setActiveTab] = useState<NavigationTab>('recipes')
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
@@ -443,6 +447,32 @@ export function App() {
                   onUpdateRecipe={updateRecipeItem}
                 />
               </Suspense>
+            ) : activeTab === 'pizza' ? (
+              <div className="pb-28 pt-[calc(env(safe-area-inset-top,0px)+1rem)]">
+                <PizzaCalculatorView
+                  onSaveRecipe={async (payload) => {
+                    const created = await addRecipe(payload)
+                    return created
+                  }}
+                  onNavigateToRecipes={() => {
+                    setActiveTab('recipes')
+                    setSelectedRecipeId(null)
+                  }}
+                />
+              </div>
+            ) : activeTab === 'tinctures' ? (
+              <div className="pb-28 pt-[calc(env(safe-area-inset-top,0px)+1rem)]">
+                <TinctureCalculatorView
+                  onSaveRecipe={async (payload) => {
+                    const created = await addRecipe(payload)
+                    return created
+                  }}
+                  onNavigateToRecipes={() => {
+                    setActiveTab('recipes')
+                    setSelectedRecipeId(null)
+                  }}
+                />
+              </div>
             ) : selectedRecipe ? (
               <RecipeDetailView
                 key={selectedRecipe.id}
@@ -460,7 +490,7 @@ export function App() {
                 }
               />
             ) : (
-              <div className="pb-10">
+              <div className="pb-28">
                 <header className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pt-[calc(env(safe-area-inset-top,0px)+1.5rem)] sm:gap-5 sm:px-6">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
@@ -783,6 +813,22 @@ export function App() {
               userEmail={user.email}
               isSigningOut={isSigningOut}
               onSignOut={handleSignOut}
+            />
+
+            {/* Dolny pasek nawigacyjny w stylu iOS (3 zakładki) */}
+            <BottomTabBar
+              activeTab={activeTab}
+              onSelectTab={(tab) => {
+                setActiveTab(tab)
+                if (tab !== 'recipes' || selectedRecipeId !== null) {
+                  setSelectedRecipeId(null)
+                  setRecipeHistory([])
+                }
+                if (typeof window !== 'undefined') {
+                  window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
+                }
+              }}
+              hidden={Boolean(cookingSession) || isSigningOut}
             />
           </>
         )}
