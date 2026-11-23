@@ -222,6 +222,32 @@ export function parseAndValidateRecipeJson(rawText: string): ValidatedRecipePayl
 
   const obj = parsed as Record<string, unknown>;
 
+  // Specjalne zabezpieczenie anty-halucynacyjne: gdy AI stwierdzi, że źródło nie jest przepisem
+  if (
+    typeof obj.title === "string" &&
+    (obj.title.trim().toUpperCase() === "BRAK_PRZEPISU" ||
+      obj.title.trim().toUpperCase().startsWith("BRAK_PRZEPISU") ||
+      obj.title.trim().toLowerCase().includes("brak przepisu"))
+  ) {
+    const desc =
+      typeof obj.description === "string" && obj.description.trim()
+        ? obj.description.trim()
+        : "W podanym źródle nie znaleziono przepisu kulinarnego.";
+    return {
+      title: "BRAK_PRZEPISU",
+      description: desc,
+      category: "Inne",
+      prep_time_minutes: 0,
+      prepTimeMinutes: 0,
+      cook_time_minutes: 0,
+      cookTimeMinutes: 0,
+      servings: 1,
+      ingredients: [],
+      steps: [],
+      imageSearchQuery: "",
+    };
+  }
+
   if (typeof obj.title !== "string" || obj.title.trim().length < 2) {
     throw new RecipeValidationError("Brak poprawnego tytułu przepisu.");
   }

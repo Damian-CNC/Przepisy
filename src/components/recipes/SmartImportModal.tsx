@@ -68,7 +68,7 @@ type ImportTabId = 'discover' | 'url' | 'photo' | 'manual'
 
 const AI_TABS: ReadonlyArray<{ id: ImportTabId; label: string; Icon: typeof Link2 }> = [
   { id: 'discover', label: 'Szef Kuchni AI', Icon: ChefHat },
-  { id: 'url', label: 'Z linku / Instagrama', Icon: Link2 },
+  { id: 'url', label: 'Z linku (IG, FB, WWW)', Icon: Link2 },
   { id: 'photo', label: 'Ze zdjęcia / Zrzutu', Icon: Camera },
 ]
 
@@ -1586,7 +1586,7 @@ export function SmartImportModal({
                         htmlFor={`${baseId}-import-url`}
                         className="text-sm font-medium text-stone-800 dark:text-stone-200"
                       >
-                        Link do rolki Instagrama lub strony z przepisem
+                        Link do posta (Instagram, Facebook) lub strony z przepisem
                       </label>
                       <button
                         type="button"
@@ -1616,9 +1616,12 @@ export function SmartImportModal({
                       enterKeyHint="next"
                       value={urlInput}
                       onChange={(e) => setUrlInput(e.target.value)}
-                      placeholder="https://www.instagram.com/reel/..."
+                      placeholder="np. https://www.instagram.com/reel/... lub https://facebook.com/..."
                       className={FIELD_CLASS}
                     />
+                    <p className="text-xs text-stone-500 dark:text-stone-400">
+                      Instagram i strony WWW odczytują się automatycznie z linku. W przypadku Facebooka, jeśli post wymaga logowania, wklej poniżej jego treść lub dodaj zrzut ekranu w zakładce „Ze zdjęcia”.
+                    </p>
                   </div>
 
                   <div className="flex flex-col gap-1.5">
@@ -1626,7 +1629,7 @@ export function SmartImportModal({
                       htmlFor={`${baseId}-import-raw`}
                       className="text-sm font-medium text-stone-800 dark:text-stone-200"
                     >
-                      Skopiowany opis rolki lub lista składników (opcjonalnie)
+                      Skopiowany opis posta lub lista składników (zalecane dla Facebooka)
                     </label>
                     <textarea
                       id={`${baseId}-import-raw`}
@@ -1634,7 +1637,7 @@ export function SmartImportModal({
                       rows={4}
                       value={rawTextInput}
                       onChange={(e) => setRawTextInput(e.target.value)}
-                      placeholder="Jeśli konto na Instagramie jest prywatne lub blokuje podgląd, wklej tutaj opis spod filmiku — AI przetłumaczy go na polski i podzieli na kroki."
+                      placeholder="Wklej treść posta, listę składników lub opis przepisu. Jeśli post z Facebooka lub Instagrama wymaga logowania, ta metoda zadziała w 100% niezawodnie!"
                       className={cn(FIELD_CLASS, 'min-h-28 py-3')}
                     />
                   </div>

@@ -219,6 +219,9 @@ export function isRecognizedCulinaryOrSocialUrl(url: string): boolean {
   return (
     lower.includes('instagram.com/reel') ||
     lower.includes('instagram.com/p/') ||
+    lower.includes('facebook.com/') ||
+    lower.includes('fb.watch/') ||
+    lower.includes('fb.me/') ||
     lower.includes('tiktok.com/') ||
     lower.includes('youtube.com/shorts') ||
     lower.includes('youtube.com/watch') ||
