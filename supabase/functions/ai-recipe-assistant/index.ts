@@ -4,7 +4,6 @@ import {
   resolveRecipeImage,
   searchWebFoodCandidates,
   rehostExternalImage,
-  generateAiDishImage,
 } from "../_shared/imageResolver.ts";
 
 const corsHeaders = {
@@ -84,37 +83,13 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Tryb dedykowany: dobór lub generowanie zdjęcia potrawy
-    if (body.mode === "generate-image") {
+    // Tryb dedykowany: wyszukanie zdjęcia potrawy z sieci (Google / DuckDuckGo)
+    if (body.mode === "generate-image" || body.mode === "pick-cover") {
       const title = String(body.title ?? body.prompt ?? body.userPrompt ?? "").trim();
       if (!title) {
         return new Response(
-          JSON.stringify({ code: "BAD_REQUEST", error: "Podaj nazwę przepisu, aby wyszukać lub wygenerować zdjęcie." }),
+          JSON.stringify({ code: "BAD_REQUEST", error: "Podaj nazwę przepisu, aby wyszukać zdjęcie." }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
-      }
-      const forceGenerate = Boolean(body.forceGenerate);
-
-      if (forceGenerate) {
-        const aiUrl = await generateAiDishImage(config, title, userId);
-        if (aiUrl) {
-          return new Response(
-            JSON.stringify({ image_url: aiUrl, source: "ai" }),
-            { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-          );
-        }
-
-        // Gdy generowanie AI nie powiodło się (np. darmowy klucz bez limitu obrazów),
-        // zwracamy 4 pasujące propozycje z sieci, aby użytkownik sam wybrał
-        const candidates = await searchWebFoodCandidates(title, 4);
-        return new Response(
-          JSON.stringify({
-            image_url: candidates[0]?.url || null,
-            ai_unavailable: true,
-            message: "Generowanie AI jest niedostępne na darmowym kluczu Google API. Wybierz jedno ze zdjęć z sieci.",
-            fallback_images: candidates,
-          }),
-          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
 

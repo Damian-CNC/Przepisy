@@ -1,7 +1,19 @@
+export const DEFAULT_RECIPE_MODEL = "gemini-3.5-flash-lite";
+export const FALLBACK_RECIPE_MODEL = "gemini-3.8-flash";
+export const HIGH_QUALITY_RECIPE_MODEL = "gemini-4-hydrogen";
+
+export const RECIPE_MODELS = [
+  DEFAULT_RECIPE_MODEL,
+  FALLBACK_RECIPE_MODEL,
+  HIGH_QUALITY_RECIPE_MODEL,
+] as const;
+
 export interface GeminiConfig {
   apiKey: string;
+  recipeModels: string[];
   primaryModel: string;
   fallbackModel?: string;
+  highQualityModel?: string;
   imageModel: string;
   attemptTimeoutMs: number;
   totalTimeoutMs: number;
@@ -63,7 +75,7 @@ const DEPRECATED_MODELS = new Set([
 export function normalizeModelName(model: string): string {
   const cleaned = model.trim().replace(/^models\//, "");
   if (DEPRECATED_MODELS.has(cleaned)) {
-    return "gemini-flash-latest";
+    return DEFAULT_RECIPE_MODEL;
   }
   return cleaned;
 }
@@ -78,21 +90,45 @@ export function loadGeminiConfig(
 
   const rawPrimary = envGetter("GEMINI_PRIMARY_MODEL");
   const primaryModel = normalizeModelName(
-    rawPrimary === undefined ? "gemini-flash-latest" : rawPrimary,
+    rawPrimary === undefined ? DEFAULT_RECIPE_MODEL : rawPrimary,
   );
   if (!primaryModel) {
     throw new GeminiConfigError("Brak skonfigurowanego modelu GEMINI_PRIMARY_MODEL.");
   }
 
   const rawFallback = envGetter("GEMINI_FALLBACK_MODEL");
-  let fallbackModel: string | undefined = rawFallback
-    ? normalizeModelName(rawFallback)
-    : undefined;
+  let fallbackModel: string | undefined =
+    rawFallback === undefined
+      ? FALLBACK_RECIPE_MODEL
+      : rawFallback.trim()
+        ? normalizeModelName(rawFallback)
+        : undefined;
 
-  // Odrzucenie duplikatu: ten sam model nie może być wywoływany ponownie jako fallback
+  // Deduplikacja identycznego primary i fallback
   if (fallbackModel && fallbackModel === primaryModel) {
     fallbackModel = undefined;
   }
+
+  const rawHighQuality = envGetter("GEMINI_HIGH_QUALITY_MODEL");
+  let highQualityModel: string | undefined =
+    rawHighQuality === undefined
+      ? HIGH_QUALITY_RECIPE_MODEL
+      : rawHighQuality.trim()
+        ? normalizeModelName(rawHighQuality)
+        : undefined;
+
+  if (
+    highQualityModel &&
+    (highQualityModel === primaryModel || highQualityModel === fallbackModel)
+  ) {
+    highQualityModel = undefined;
+  }
+
+  const recipeModels = [
+    primaryModel,
+    ...(fallbackModel ? [fallbackModel] : []),
+    ...(highQualityModel ? [highQualityModel] : []),
+  ];
 
   const imageModel = normalizeModelName(
     envGetter("GEMINI_IMAGE_MODEL") || "gemini-3.1-flash-lite-image",
@@ -100,12 +136,12 @@ export function loadGeminiConfig(
 
   const attemptTimeoutMs = parsePositiveInt(
     envGetter("GEMINI_ATTEMPT_TIMEOUT_MS"),
-    18000,
+    14000,
     "GEMINI_ATTEMPT_TIMEOUT_MS",
   );
   const totalTimeoutMs = parsePositiveInt(
     envGetter("GEMINI_TOTAL_TIMEOUT_MS"),
-    45000,
+    40000,
     "GEMINI_TOTAL_TIMEOUT_MS",
   );
 
@@ -123,8 +159,10 @@ export function loadGeminiConfig(
 
   return {
     apiKey,
+    recipeModels,
     primaryModel,
     fallbackModel,
+    highQualityModel,
     imageModel,
     attemptTimeoutMs,
     totalTimeoutMs,

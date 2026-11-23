@@ -26,6 +26,7 @@ import {
   PenLine,
   Plus,
   RotateCcw,
+  Search,
   Sparkles,
   Timer,
   Trash2,
@@ -36,11 +37,11 @@ import { useVoiceRecognition } from '../../hooks/useVoiceRecognition'
 import { prepareImageForAi, uploadRecipeImage } from '../../lib/imageCompression'
 import {
   discoverRecipeWithAi,
-  generateRecipeCoverImage,
   groupIngredientsBySection,
   importRecipeWithAi,
   toSafeHttpUrl,
 } from '../../lib/recipesApi'
+import { RecipePhotoPickerModal } from './RecipePhotoPickerModal'
 import type {
   RecipeCategory,
   RecipeIngredient,
@@ -187,7 +188,6 @@ export function SmartImportModal({
   // Zakładka 1: Szef Kuchni AI
   const [chefPrompt, setChefPrompt] = useState('')
   const [useWebSearch, setUseWebSearch] = useState(true)
-  const [imageMode, setImageMode] = useState<'auto' | 'web' | 'ai'>('auto')
 
   const {
     isSupported: isVoiceSupported,
@@ -227,7 +227,9 @@ export function SmartImportModal({
   const [manualServings, setManualServings] = useState('2')
   const [manualCoverFile, setManualCoverFile] = useState<File | null>(null)
   const [manualGeneratedCoverUrl, setManualGeneratedCoverUrl] = useState<string | null>(null)
-  const [manualCoverAction, setManualCoverAction] = useState<'search' | 'generate' | null>(null)
+  const [isPhotoPickerOpen, setIsPhotoPickerOpen] = useState(false)
+  const [photoPickerTitle, setPhotoPickerTitle] = useState('')
+  const [photoPickerTarget, setPhotoPickerTarget] = useState<'preview' | 'manual'>('preview')
   const manualCoverPreviewUrl = useMemo(
     () => (manualCoverFile ? URL.createObjectURL(manualCoverFile) : manualGeneratedCoverUrl),
     [manualCoverFile, manualGeneratedCoverUrl],
@@ -241,7 +243,6 @@ export function SmartImportModal({
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isReplacingPreviewCover, setIsReplacingPreviewCover] = useState(false)
-  const [previewCoverAction, setPreviewCoverAction] = useState<'search' | 'generate' | null>(null)
   const [previewDraft, setPreviewDraft] = useState<RecipeInsert | null>(null)
 
   // Zwalnianie ObjectURL dla podglądów lokalnych zdjęć
@@ -277,7 +278,6 @@ export function SmartImportModal({
     setManualServings('2')
     setManualCoverFile(null)
     setManualGeneratedCoverUrl(null)
-    setManualCoverAction(null)
     setManualIngredients([createEmptyIngredient()])
     setManualSteps([createEmptyStep()])
     setPreviewDraft(null)
@@ -285,7 +285,6 @@ export function SmartImportModal({
     setIsAnalyzing(false)
     setIsSaving(false)
     setIsReplacingPreviewCover(false)
-    setPreviewCoverAction(null)
   }
 
   const handleClose = () => {
@@ -461,7 +460,6 @@ export function SmartImportModal({
       const draft = await discoverRecipeWithAi({
         userPrompt: prompt,
         useWebSearch,
-        imageMode,
         signal: controller.signal,
       })
       if (!isMountedRef.current) return
@@ -559,64 +557,6 @@ export function SmartImportModal({
       )
     } finally {
       setIsReplacingPreviewCover(false)
-    }
-  }
-
-  const handlePreviewCoverFromAi = async (forceGenerate: boolean) => {
-    if (!previewDraft || previewCoverAction !== null || isReplacingPreviewCover) return
-    setPreviewCoverAction(forceGenerate ? 'generate' : 'search')
-    setErrorMessage(null)
-
-    try {
-      const res = await generateRecipeCoverImage({
-        title: previewDraft.title,
-        description: previewDraft.description,
-        category: previewDraft.category,
-        forceGenerate,
-      })
-      if (res.imageUrl) {
-        setPreviewDraft((prev) => (prev ? { ...prev, image_url: res.imageUrl } : prev))
-      }
-    } catch (err) {
-      setErrorMessage(
-        err instanceof Error && err.message
-          ? err.message
-          : 'Nie udało się dobrać ani wygenerować zdjęcia okładki.',
-      )
-    } finally {
-      setPreviewCoverAction(null)
-    }
-  }
-
-  const handleManualCoverFromAi = async (forceGenerate: boolean) => {
-    if (manualCoverAction !== null) return
-    const cleanTitle = manualTitle.trim()
-    if (!cleanTitle) {
-      setErrorMessage('Wpisz najpierw nazwę potrawy powyżej, aby dobrać lub wygenerować zdjęcie.')
-      return
-    }
-    setManualCoverAction(forceGenerate ? 'generate' : 'search')
-    setErrorMessage(null)
-
-    try {
-      const res = await generateRecipeCoverImage({
-        title: cleanTitle,
-        description: manualDescription.trim() || null,
-        category: manualCategory,
-        forceGenerate,
-      })
-      if (res.imageUrl) {
-        setManualCoverFile(null)
-        setManualGeneratedCoverUrl(res.imageUrl)
-      }
-    } catch (err) {
-      setErrorMessage(
-        err instanceof Error && err.message
-          ? err.message
-          : 'Nie udało się dobrać ani wygenerować zdjęcia okładki.',
-      )
-    } finally {
-      setManualCoverAction(null)
     }
   }
 
@@ -746,7 +686,8 @@ export function SmartImportModal({
       : chefPrompt
 
   return (
-    <GlassModal
+    <>
+      <GlassModal
       isOpen={isOpen}
       onClose={handleClose}
       title={
@@ -842,26 +783,15 @@ export function SmartImportModal({
                   type="button"
                   variant="secondary"
                   size="sm"
-                  isLoading={previewCoverAction === 'search'}
-                  disabled={previewCoverAction === 'generate' || isReplacingPreviewCover}
-                  loadingText="Szukam..."
-                  leftIcon={<Globe className="size-4 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />}
-                  onClick={() => void handlePreviewCoverFromAi(false)}
+                  disabled={isReplacingPreviewCover}
+                  leftIcon={<Search className="size-4 text-amber-700 dark:text-amber-400" aria-hidden="true" />}
+                  onClick={() => {
+                    setPhotoPickerTitle(previewDraft.title)
+                    setPhotoPickerTarget('preview')
+                    setIsPhotoPickerOpen(true)
+                  }}
                 >
-                  Znajdź z sieci
-                </GlassButton>
-
-                <GlassButton
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  isLoading={previewCoverAction === 'generate'}
-                  disabled={previewCoverAction === 'search' || isReplacingPreviewCover}
-                  loadingText="Generuję..."
-                  leftIcon={<Sparkles className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />}
-                  onClick={() => void handlePreviewCoverFromAi(true)}
-                >
-                  Generuj zdjęcie
+                  Zmień zdjęcie (Google)
                 </GlassButton>
 
                 <input
@@ -880,7 +810,6 @@ export function SmartImportModal({
                   variant="secondary"
                   size="sm"
                   isLoading={isReplacingPreviewCover}
-                  disabled={previewCoverAction !== null}
                   loadingText="Wysyłanie..."
                   leftIcon={<ImagePlus className="size-4" aria-hidden="true" />}
                   onClick={() => previewCoverInputRef.current?.click()}
@@ -1519,42 +1448,6 @@ export function SmartImportModal({
                     </span>
                   </label>
 
-                  {/* Wybór sposobu pozyskania zdjęcia potrawy */}
-                  <div className="flex flex-col gap-1.5 rounded-2xl border border-white/40 bg-white/50 p-3 backdrop-blur-xl dark:border-white/10 dark:bg-zinc-900/40">
-                    <span className="text-xs font-semibold text-stone-700 dark:text-stone-300">
-                      Zdjęcie potrawy:
-                    </span>
-                    <div className="flex flex-wrap gap-2">
-                      <GlassPill
-                        as="button"
-                        type="button"
-                        variant={imageMode === 'auto' ? 'active' : 'surface'}
-                        size="sm"
-                        onClick={() => setImageMode('auto')}
-                      >
-                        Automatycznie (sieć lub AI)
-                      </GlassPill>
-                      <GlassPill
-                        as="button"
-                        type="button"
-                        variant={imageMode === 'web' ? 'active' : 'surface'}
-                        size="sm"
-                        onClick={() => setImageMode('web')}
-                      >
-                        Znajdź w sieci
-                      </GlassPill>
-                      <GlassPill
-                        as="button"
-                        type="button"
-                        variant={imageMode === 'ai' ? 'active' : 'surface'}
-                        size="sm"
-                        onClick={() => setImageMode('ai')}
-                      >
-                        Wygeneruj AI
-                      </GlassPill>
-                    </div>
-                  </div>
-
                   <div className="pt-1">
                     <GlassButton
                       type="submit"
@@ -1890,37 +1783,25 @@ export function SmartImportModal({
                         type="button"
                         variant="secondary"
                         size="md"
-                        disabled={manualCoverAction !== null}
                         leftIcon={<ImagePlus className="size-4" aria-hidden="true" />}
                         onClick={() => manualCoverInputRef.current?.click()}
                       >
-                        {manualCoverPreviewUrl ? 'Zmień z pliku' : 'Dodaj okładkę'}
+                        {manualCoverPreviewUrl ? 'Zmień z pliku' : 'Dodaj z pliku'}
                       </GlassButton>
 
                       <GlassButton
                         type="button"
                         variant="secondary"
                         size="md"
-                        isLoading={manualCoverAction === 'search'}
-                        disabled={manualCoverAction === 'generate'}
-                        loadingText="Szukam..."
                         leftIcon={<Globe className="size-4 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />}
-                        onClick={() => void handleManualCoverFromAi(false)}
+                        onClick={() => {
+                          const title = manualTitle.trim() || 'Danie'
+                          setPhotoPickerTitle(title)
+                          setPhotoPickerTarget('manual')
+                          setIsPhotoPickerOpen(true)
+                        }}
                       >
-                        Znajdź z sieci
-                      </GlassButton>
-
-                      <GlassButton
-                        type="button"
-                        variant="secondary"
-                        size="md"
-                        isLoading={manualCoverAction === 'generate'}
-                        disabled={manualCoverAction === 'search'}
-                        loadingText="Generuję..."
-                        leftIcon={<Sparkles className="size-4 text-amber-600 dark:text-amber-400" aria-hidden="true" />}
-                        onClick={() => void handleManualCoverFromAi(true)}
-                      >
-                        Generuj zdjęcie
+                        Dobierz zdjęcie (Google)
                       </GlassButton>
 
                       {manualCoverPreviewUrl && (
@@ -2290,5 +2171,20 @@ export function SmartImportModal({
         )}
       </div>
     </GlassModal>
+
+    <RecipePhotoPickerModal
+      isOpen={isPhotoPickerOpen}
+      onClose={() => setIsPhotoPickerOpen(false)}
+      recipeTitle={photoPickerTitle}
+      onPhotoSelected={(url) => {
+        if (photoPickerTarget === 'preview') {
+          setPreviewDraft((prev) => (prev ? { ...prev, image_url: url } : prev))
+        } else {
+          setManualCoverFile(null)
+          setManualGeneratedCoverUrl(url)
+        }
+      }}
+    />
+  </>
   )
 }

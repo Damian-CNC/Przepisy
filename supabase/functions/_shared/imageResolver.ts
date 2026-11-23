@@ -280,117 +280,10 @@ export async function searchWebDishImage(
   return null;
 }
 
-/**
- * Generuje zdjęcie potrawy przez model Gemini Image i zapisuje je do Supabase Storage.
- */
-export async function generateAiDishImage(
-  config: GeminiConfig,
-  dishTitle: string,
-  userId?: string,
-): Promise<string | null> {
-  const prompt = `Close-up delicious food photography of ${dishTitle}, served fresh on a beautiful plate, natural warm kitchen lighting, appetizing, commercial culinary food styling, ultra detailed, no watermark.`;
-
-  // 1. Próba przez Imagen 3 (:predict)
-  try {
-    const imagenUrl = `${config.apiBaseUrl}/models/imagen-3.0-generate-002:predict`;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 16000);
-
-    const res = await fetch(imagenUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": config.apiKey,
-      },
-      body: JSON.stringify({
-        instances: [{ prompt }],
-        parameters: { sampleCount: 1, aspectRatio: "1:1" },
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-
-    if (res.ok) {
-      const data = await res.json();
-      const b64 = data?.predictions?.[0]?.bytesBase64Encoded;
-      if (b64) {
-        const binaryStr = atob(b64);
-        const bytes = new Uint8Array(binaryStr.length);
-        for (let i = 0; i < binaryStr.length; i++) {
-          bytes[i] = binaryStr.charCodeAt(i);
-        }
-        const stored = await uploadBufferToStorage(bytes, "image/jpeg", userId);
-        if (stored) return stored;
-      }
-    }
-  } catch {}
-
-  // 2. Próba przez modele multimodalne (:generateContent)
-  const candidateModels = [
-    config.imageModel,
-    "gemini-2.0-flash",
-    "gemini-nano-banana-2.1",
-    "gemini-3.1-flash-lite-image",
-  ].filter(Boolean);
-
-  const cleanModels = [...new Set(candidateModels.map((m) => m.replace(/^models\//, "")))];
-
-  for (const model of cleanModels) {
-    for (const modalities of [["TEXT", "IMAGE"], ["IMAGE"]]) {
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 16000);
-
-        const url = `${config.apiBaseUrl}/models/${encodeURIComponent(model)}:generateContent`;
-
-        const res = await fetch(url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": config.apiKey,
-          },
-          body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            generationConfig: {
-              responseModalities: modalities,
-            },
-          }),
-          signal: controller.signal,
-        });
-        clearTimeout(timer);
-
-        if (!res.ok) continue;
-
-        const data = await res.json();
-        const parts = data?.candidates?.[0]?.content?.parts ?? [];
-        const imagePart = parts.find(
-          (p: { inlineData?: { data?: string; mimeType?: string } }) => p.inlineData?.data,
-        );
-
-        if (!imagePart?.inlineData?.data) continue;
-
-        const mimeType = imagePart.inlineData.mimeType || "image/png";
-        const binaryStr = atob(imagePart.inlineData.data);
-        const bytes = new Uint8Array(binaryStr.length);
-        for (let i = 0; i < binaryStr.length; i++) {
-          bytes[i] = binaryStr.charCodeAt(i);
-        }
-
-        const stored = await uploadBufferToStorage(bytes, mimeType, userId);
-        if (stored) return stored;
-      } catch {
-        continue;
-      }
-    }
-  }
-
-  return null;
-}
-
 export async function resolveRecipeImage(params: {
   config: GeminiConfig;
   dishQuery: string;
-  mode: "auto" | "web" | "ai" | "none";
+  mode?: "auto" | "web" | "none";
   externalImageUrl?: string | null;
   userId?: string;
 }): Promise<string | null> {
@@ -407,21 +300,9 @@ export async function resolveRecipeImage(params: {
     return getCuratedFoodFallback("obiad");
   }
 
-  if (params.mode === "ai") {
-    const generated = await generateAiDishImage(params.config, query, params.userId);
-    if (generated) return generated;
-
-    const web = await searchWebDishImage(query, params.userId);
-    if (web) return web;
-
-    return getCuratedFoodFallback(query);
-  }
-
+  // Wyszukanie pierwszego pasującego zdjęcia z sieci (Google / DuckDuckGo Images)
   const web = await searchWebDishImage(query, params.userId);
   if (web) return web;
-
-  const generated = await generateAiDishImage(params.config, query, params.userId);
-  if (generated) return generated;
 
   return getCuratedFoodFallback(query);
 }

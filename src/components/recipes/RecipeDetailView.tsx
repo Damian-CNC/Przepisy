@@ -17,7 +17,6 @@ import {
   Play,
   Plus,
   Settings,
-  Sparkles,
   Timer,
   Trash2,
   Users,
@@ -26,7 +25,6 @@ import {
 import {
   extractLinkedRecipes,
   formatScaledAmount,
-  generateRecipeCoverImage,
   groupIngredientsBySection,
   toSafeHttpUrl,
 } from '../../lib/recipesApi'
@@ -84,7 +82,6 @@ export function RecipeDetailView({
   const baseServings = recipe.servings && recipe.servings > 0 ? recipe.servings : 2
   const [targetServings, setTargetServings] = useState<number>(baseServings)
   const [isUpdatingPhoto, setIsUpdatingPhoto] = useState(false)
-  const [photoAction, setPhotoAction] = useState<'search' | 'generate' | null>(null)
   const [isPhotoOptionsOpen, setIsPhotoOptionsOpen] = useState(false)
   const [isPhotoPickerOpen, setIsPhotoPickerOpen] = useState(false)
   const [photoPickerNotice, setPhotoPickerNotice] = useState<string | null>(null)
@@ -140,47 +137,10 @@ export function RecipeDetailView({
     }
   }
 
-  const handleResolveCoverPhoto = async (forceGenerate: boolean) => {
-    if (photoAction !== null || isUpdatingPhoto) return
+  const handleOpenPhotoSearch = () => {
     setIsPhotoOptionsOpen(false)
-    setPhotoError(null)
-
-    if (!forceGenerate) {
-      setPhotoPickerNotice(null)
-      setIsPhotoPickerOpen(true)
-      return
-    }
-
-    setPhotoAction('generate')
-    try {
-      const res = await generateRecipeCoverImage({
-        title: recipe.title,
-        description: recipe.description,
-        category: recipe.category,
-        forceGenerate: true,
-      })
-
-      if (res.imageUrl) {
-        await onUpdateRecipe(recipe.id, { image_url: res.imageUrl })
-      } else if (res.aiUnavailable) {
-        setPhotoPickerNotice(
-          'Generowanie AI jest niedostępne na darmowym kluczu Google API. Poniżej pobrano 4 najlepsze zdjęcia z sieci – wybierz to, które pasuje najlepiej:',
-        )
-        setIsPhotoPickerOpen(true)
-      }
-    } catch (err) {
-      setPhotoError(
-        err instanceof Error && err.message
-          ? err.message
-          : 'Nie udało się wygenerować zdjęcia dla tego przepisu.',
-      )
-      setPhotoPickerNotice(
-        'Nie udało się połączyć z generatorem AI. Wybierz jedno ze zdjęć z sieci poniżej:',
-      )
-      setIsPhotoPickerOpen(true)
-    } finally {
-      setPhotoAction(null)
-    }
+    setPhotoPickerNotice(null)
+    setIsPhotoPickerOpen(true)
   }
 
   const handleConfirmDelete = async () => {
@@ -437,8 +397,8 @@ export function RecipeDetailView({
                 type="button"
                 variant="secondary"
                 size="md"
-                isLoading={isUpdatingPhoto || photoAction !== null}
-                loadingText={photoAction === 'generate' ? 'Generuję...' : photoAction === 'search' ? 'Szukam...' : 'Zapis...'}
+                isLoading={isUpdatingPhoto}
+                loadingText="Zapisuję..."
                 leftIcon={<ImagePlus className="size-4 shrink-0" />}
                 onClick={() => setIsPhotoOptionsOpen(true)}
               >
@@ -828,20 +788,9 @@ export function RecipeDetailView({
             size="lg"
             fullWidth
             leftIcon={<Globe className="size-5 text-emerald-700 dark:text-emerald-400" aria-hidden="true" />}
-            onClick={() => void handleResolveCoverPhoto(false)}
+            onClick={handleOpenPhotoSearch}
           >
-            Znajdź zdjęcie w internecie
-          </GlassButton>
-
-          <GlassButton
-            type="button"
-            variant="primary"
-            size="lg"
-            fullWidth
-            leftIcon={<Sparkles className="size-5" aria-hidden="true" />}
-            onClick={() => void handleResolveCoverPhoto(true)}
-          >
-            Generuj zdjęcie AI
+            Znajdź zdjęcie w internecie (Google Grafika)
           </GlassButton>
         </div>
       </GlassModal>

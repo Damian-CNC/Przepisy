@@ -865,7 +865,7 @@ export async function resolveFoodCoverClientSide(
 }
 
 /**
- * Dobiera z sieci (a w ostateczności lub przy `forceGenerate: true` generuje przez AI) zdjęcie okładki dania.
+ * Dobiera z sieci (Google / DuckDuckGo / kulinaria) zdjęcie okładki dania.
  */
 export async function generateRecipeCoverImage(payload: {
   title: string
@@ -879,7 +879,7 @@ export async function generateRecipeCoverImage(payload: {
     throw new Error('Podaj nazwę potrawy, aby dobrać zdjęcie.')
   }
 
-  // 1. Próba przez backend Edge Function (AI / Supabase Storage)
+  // 1. Próba przez backend Edge Function (Wyszukanie zdjęcia w sieci + rehosting)
   try {
     const envelope = await invokeEdgeFunction<Record<string, unknown>>(
       'ai-recipe-assistant',
@@ -888,21 +888,13 @@ export async function generateRecipeCoverImage(payload: {
         title,
         description: payload.description?.trim() || undefined,
         category: payload.category?.trim() || undefined,
-        forceGenerate: Boolean(payload.forceGenerate),
       },
       {
         signal: payload.signal,
-        timeoutMs: 16000,
+        timeoutMs: 8000,
         authErrorMsg: 'Brak uprawnień do asystenta AI.',
       },
     )
-
-    if (envelope?.ai_unavailable) {
-      return {
-        imageUrl: toSafeHttpUrl(toNullableTrimmedString(envelope.image_url)) || '',
-        aiUnavailable: true,
-      }
-    }
 
     const imageUrl = toSafeHttpUrl(toNullableTrimmedString(envelope?.image_url))
     if (imageUrl) {
@@ -910,13 +902,6 @@ export async function generateRecipeCoverImage(payload: {
     }
   } catch (backendErr) {
     console.warn('Backend image resolver unavailable:', backendErr)
-  }
-
-  if (payload.forceGenerate) {
-    return {
-      imageUrl: '',
-      aiUnavailable: true,
-    }
   }
 
   const fallback = await resolveFoodCoverClientSide(title, payload.category)

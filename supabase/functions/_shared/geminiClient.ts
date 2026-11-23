@@ -91,12 +91,18 @@ function parseRetryAfterHeader(headerValue: string | null): number | undefined {
 }
 
 function getThinkingConfigForModel(model: string): Record<string, unknown> | undefined {
-  // Modele Gemini 3.x / 3.8 / latest nie obsługują 'minimal' - 'low' zapobiega długiemu myśleniu i timeoutom
-  if (model.includes("3.8") || model.includes("3.6") || model.includes("latest") || model.includes("gemini-3")) {
-    return { thinkingLevel: "low" };
-  }
   if (model.includes("flash-lite")) {
     return { thinkingLevel: "minimal" };
+  }
+  if (
+    model.includes("3.8") ||
+    model.includes("3.6") ||
+    model.includes("latest") ||
+    model.includes("gemini-3") ||
+    model.includes("hydrogen") ||
+    model.includes("gemini-4")
+  ) {
+    return { thinkingLevel: "low" };
   }
   return undefined;
 }
@@ -205,13 +211,15 @@ export async function generateStructuredRecipe(
   }
 
   const deadline = Date.now() + config.totalTimeoutMs;
-  const modelsToTry: Array<{ model: string; stage: "primary" | "fallback" }> = [
-    { model: config.primaryModel, stage: "primary" },
-  ];
+  const configuredModels = config.recipeModels?.length
+    ? config.recipeModels
+    : ([config.primaryModel, config.fallbackModel, config.highQualityModel].filter(Boolean) as string[]);
 
-  if (config.fallbackModel && config.fallbackModel !== config.primaryModel) {
-    modelsToTry.push({ model: config.fallbackModel, stage: "fallback" });
-  }
+  const modelsToTry: Array<{ model: string; stage: "primary" | "fallback" | "high-quality" }> =
+    configuredModels.map((model, idx) => ({
+      model,
+      stage: idx === 0 ? "primary" : idx === 1 ? "fallback" : "high-quality",
+    }));
 
   let lastError: GeminiOperationError = new GeminiOperationError(
     "TRANSIENT_UNAVAILABLE",
