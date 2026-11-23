@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 
 export interface UseWakeLockResult {
-  /** Whether the browser supports the Screen Wake Lock API. */
+  /** Czy przeglądarka obsługuje Screen Wake Lock API. */
   isSupported: boolean
-  /** Whether a screen wake lock is currently active. */
+  /** Czy blokada wygaszania ekranu jest aktualnie aktywna. */
   isActive: boolean
-  /** Localized error message if acquiring the wake lock failed. */
+  /** Komunikat błędu, jeśli nie udało się uzyskać blokady. */
   error: string | null
 }
 
@@ -18,8 +18,9 @@ function checkWakeLockSupport(): boolean {
 }
 
 /**
- * Automatically acquires and maintains a Screen Wake Lock while `enabled` is true.
- * Re-requests the lock when the tab becomes visible again and releases it on disable or unmount.
+ * Automatycznie blokuje wygaszanie ekranu, gdy `enabled` jest true.
+ * Odnawia blokadę przy powrocie do aplikacji oraz po dowolnej interakcji użytkownika
+ * (rozwiązanie dla polityki iOS Safari wymagającej gestu użytkownika).
  */
 export function useWakeLock(enabled: boolean): UseWakeLockResult {
   const isSupported = checkWakeLockSupport()
@@ -52,7 +53,7 @@ export function useWakeLock(enabled: boolean): UseWakeLockResult {
           await sentinel.release()
         }
       } catch {
-        // Ignore release errors when the browser already invalidated the sentinel
+        // Ignoruj błędy, jeśli przeglądarka unieważniła wskaźnik
       }
       if (!cancelled) {
         setIsActive(false)
@@ -100,12 +101,25 @@ export function useWakeLock(enabled: boolean): UseWakeLockResult {
       }
     }
 
+    // Wymuszenie ponownego uzyskania blokady po geście użytkownika (np. na iOS Safari)
+    const handleUserGesture = () => {
+      if (!sentinelRef.current || sentinelRef.current.released) {
+        void requestLock()
+      }
+    }
+
     void requestLock()
     document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('pointerdown', handleUserGesture, { passive: true })
+    window.addEventListener('touchstart', handleUserGesture, { passive: true })
+    window.addEventListener('keydown', handleUserGesture, { passive: true })
 
     return () => {
       cancelled = true
       document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('pointerdown', handleUserGesture)
+      window.removeEventListener('touchstart', handleUserGesture)
+      window.removeEventListener('keydown', handleUserGesture)
       void releaseCurrentSentinel()
     }
   }, [enabled, isSupported])

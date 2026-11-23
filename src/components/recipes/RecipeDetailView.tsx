@@ -337,7 +337,7 @@ export function RecipeDetailView({
       />
 
       {/* Główna treść szczegółów */}
-      <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pt-6 sm:px-6">
+      <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pt-6 pb-32 sm:px-6">
         {/* Panel Trybu Edycji pod Zębatką (Punkt 7, 8, 12) */}
         {isEditMode && (
           <section
@@ -557,7 +557,33 @@ export function RecipeDetailView({
                   <Plus className="size-4" aria-hidden="true" />
                 </GlassButton>
               </div>
+
+              {/* Przycisk Ugotuj widoczny bezpośrednio przy porcjach */}
+              <GlassButton
+                type="button"
+                variant="primary"
+                size="md"
+                leftIcon={<Play className="size-4 fill-current" aria-hidden="true" />}
+                onClick={() => onStartCooking(recipe, targetServings)}
+                className="hidden sm:inline-flex"
+              >
+                Ugotuj
+              </GlassButton>
             </div>
+          </div>
+
+          {/* Mobilny przycisk Ugotuj w karcie podsumowania */}
+          <div className="mt-4 sm:hidden">
+            <GlassButton
+              type="button"
+              variant="primary"
+              size="md"
+              fullWidth
+              leftIcon={<Play className="size-4 fill-current" aria-hidden="true" />}
+              onClick={() => onStartCooking(recipe, targetServings)}
+            >
+              Rozpocznij gotowanie
+            </GlassButton>
           </div>
         </GlassCard>
 
@@ -743,7 +769,7 @@ export function RecipeDetailView({
       />
 
       {/* Pływający przycisk na dole ekranu (Thumb Zone) */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 flex justify-center px-4">
+      <div className="pointer-events-none fixed inset-x-0 bottom-[max(1.25rem,env(safe-area-inset-bottom))] z-40 flex justify-center px-4">
         <div className="pointer-events-auto w-full max-w-md">
           <GlassButton
             type="button"

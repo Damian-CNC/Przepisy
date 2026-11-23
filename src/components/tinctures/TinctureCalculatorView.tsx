@@ -8,8 +8,9 @@ import {
   Sliders,
   Wine,
 } from 'lucide-react'
-import { GlassButton, GlassCard, GlassPill, cn } from '../ui'
-import type { RecipeInsert } from '../../lib/supabase'
+import { GlassButton, GlassCard, cn } from '../ui'
+import { RecipeCard } from '../recipes/RecipeCard'
+import type { RecipeInsert, RecipeRow } from '../../lib/supabase'
 import type { AlcoholTypeId, TinctureFruitId } from './tincturePresets'
 import { TINCTURE_ALCOHOL_TYPES, TINCTURE_PRESETS } from './tincturePresets'
 import { calculateTinctureRecipe } from './tinctureMath'
@@ -23,15 +24,47 @@ import { TinctureSettingsModal } from './TinctureSettingsModal'
 export interface TinctureCalculatorViewProps {
   onSaveRecipe: (payload: RecipeInsert) => Promise<unknown>
   onNavigateToRecipes?: () => void
+  recipes?: RecipeRow[]
+  onSelectRecipe?: (id: string) => void
+  onToggleFavorite?: (id: string) => void | Promise<unknown>
 }
 
 export function TinctureCalculatorView({
   onSaveRecipe,
-  onNavigateToRecipes,
+  onNavigateToRecipes: _onNavigateToRecipes,
+  recipes = [],
+  onSelectRecipe,
+  onToggleFavorite,
 }: TinctureCalculatorViewProps) {
+  const [subView, setSubView] = useState<'calculator' | 'recipes'>('calculator')
+
   // Wybór owocu
   const [selectedFruit, setSelectedFruit] = useState<TinctureFruitId>('malina')
   const preset = TINCTURE_PRESETS[selectedFruit]
+
+  // Przepisy powiązane z nalewkami
+  const tinctureRecipes = useMemo(() => {
+    return recipes.filter((r) => {
+      const category = (r.category ?? '').toLowerCase()
+      const title = (r.title ?? '').toLowerCase()
+      const tags = Array.isArray(r.tags) ? r.tags.map((t) => (t ?? '').toLowerCase()) : []
+      return (
+        category === 'nalewka' ||
+        category === 'nalewki' ||
+        (category === 'napój' && (tags.includes('nalewka') || title.includes('nalewk') || title.includes('ówka'))) ||
+        tags.includes('nalewka') ||
+        tags.some(
+          (t) =>
+            t.includes('nalewk') ||
+            t.includes('malinówka') ||
+            t.includes('cytrynówka') ||
+            t.includes('wiśniówka'),
+        ) ||
+        title.includes('nalewk') ||
+        title.includes('ówka')
+      )
+    })
+  }, [recipes])
 
   // Profile cukru załadowane z pamięci telefonu
   const [sugarProfiles, setSugarProfiles] = useState<TinctureSugarProfiles>(() =>
@@ -127,7 +160,7 @@ export function TinctureCalculatorView({
       const payload: RecipeInsert = {
         title: recipeTitle,
         description: recipeDescription,
-        category: 'Napój',
+        category: 'Nalewki',
         tags: ['Nalewka', preset.shortName, `${results.targetAbv}% vol`],
         servings: Math.max(1, Math.round(results.finalBottlesHalfLiter)),
         prep_time_minutes: 30,
@@ -162,318 +195,422 @@ export function TinctureCalculatorView({
           </p>
         </div>
 
-        <GlassButton
+        {subView === 'calculator' && (
+          <GlassButton
+            type="button"
+            variant="secondary"
+            size="sm"
+            leftIcon={<Sliders className="size-3.5" />}
+            onClick={() => setIsSettingsModalOpen(true)}
+            className="self-start sm:self-auto"
+          >
+            Ustawienia cukru
+          </GlassButton>
+        )}
+      </div>
+
+      {/* 2 Opcje u góry: 1. Kalkulator, 2. Przepisy */}
+      <div className="flex items-center justify-center p-1 rounded-2xl bg-stone-900/5 dark:bg-white/10 backdrop-blur-xl border border-stone-900/10 dark:border-white/15 max-w-xs mx-auto w-full shadow-sm">
+        <button
           type="button"
-          variant="secondary"
-          size="sm"
-          leftIcon={<Sliders className="size-3.5" />}
-          onClick={() => setIsSettingsModalOpen(true)}
-          className="self-start sm:self-auto"
+          onClick={() => setSubView('calculator')}
+          className={cn(
+            'relative flex-1 py-1.5 px-3 text-xs sm:text-sm font-semibold rounded-xl transition-all duration-200 cursor-pointer text-center',
+            subView === 'calculator'
+              ? 'bg-rose-600 text-white shadow-sm dark:bg-rose-500 dark:text-stone-950 font-bold'
+              : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200',
+          )}
         >
-          Ustawienia cukru
-        </GlassButton>
+          Kalkulator
+        </button>
+        <button
+          type="button"
+          onClick={() => setSubView('recipes')}
+          className={cn(
+            'relative flex-1 py-1.5 px-3 text-xs sm:text-sm font-semibold rounded-xl transition-all duration-200 cursor-pointer text-center',
+            subView === 'recipes'
+              ? 'bg-rose-600 text-white shadow-sm dark:bg-rose-500 dark:text-stone-950 font-bold'
+              : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200',
+          )}
+        >
+          Przepisy {tinctureRecipes.length > 0 && `(${tinctureRecipes.length})`}
+        </button>
       </div>
 
-      {/* 1. Kafelki wyboru nalewki */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        {(Object.keys(TINCTURE_PRESETS) as TinctureFruitId[]).map((id) => {
-          const item = TINCTURE_PRESETS[id]
-          const isSelected = selectedFruit === id
-
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => handleSelectFruit(id)}
-              className={cn(
-                'flex flex-col text-left p-3 rounded-2xl border transition-all duration-200 cursor-pointer',
-                isSelected
-                  ? 'border-rose-500/60 bg-rose-500/10 shadow-lg shadow-rose-500/10 dark:border-rose-400/50 dark:bg-rose-500/15'
-                  : 'border-stone-900/10 bg-white/40 hover:bg-white/70 dark:border-white/10 dark:bg-stone-900/40 dark:hover:bg-stone-900/70',
-              )}
+      {/* WIDOK: ZAPISANE PRZEPISY NALEWEK */}
+      {subView === 'recipes' ? (
+        <div>
+          {tinctureRecipes.length === 0 ? (
+            <GlassCard variant="elevated" padding="lg" className="text-center py-12">
+              <div className="flex flex-col items-center gap-3 max-w-sm mx-auto">
+                <div className="inline-flex size-14 items-center justify-center rounded-2xl bg-rose-500/15 text-rose-700 dark:text-rose-300">
+                  <Wine className="size-7" />
+                </div>
+                <h3 className="text-base sm:text-lg font-bold text-stone-900 dark:text-stone-50">
+                  Brak zapisanych nalewek
+                </h3>
+                <p className="text-xs sm:text-sm text-stone-600 dark:text-stone-300">
+                  Wylicz precyzyjne proporcje w kalkulatorze i kliknij „Zapisz przepis”, a pojawi się na tej liście.
+                </p>
+                <GlassButton
+                  type="button"
+                  variant="primary"
+                  size="md"
+                  leftIcon={<Wine className="size-4" />}
+                  onClick={() => setSubView('calculator')}
+                  className="mt-2"
+                >
+                  Przejdź do kalkulatora
+                </GlassButton>
+              </div>
+            </GlassCard>
+          ) : (
+            <section
+              aria-label="Zapisane nalewki"
+              className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
             >
-              <div className="flex items-center justify-between gap-1">
-                <span className="text-sm font-bold text-stone-900 dark:text-stone-50">
-                  {item.shortName}
-                </span>
-                {isSelected && (
-                  <span className="flex size-4.5 items-center justify-center rounded-full bg-rose-600 text-white dark:bg-rose-500 dark:text-stone-950">
-                    <Check className="size-2.5 stroke-[3]" />
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] text-rose-700 dark:text-rose-300 font-medium mt-0.5">
-                {sugarProfiles[id] ?? item.defaultSugarGramsPerKg}g cukru / kg
-              </p>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* 2. Główne karty parametrów */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Karta A: Owoce i moc nalewki */}
-        <GlassCard variant="default" padding="md" className="space-y-4">
-          <div className="flex items-center justify-between border-b border-stone-200/50 dark:border-white/10 pb-2.5">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-stone-700 dark:text-stone-300">
-              Owoce i moc nalewki
-            </h2>
-            <GlassPill variant="tag" size="sm">
-              Cukier: {currentSugarPerKg} g/kg
-            </GlassPill>
-          </div>
-
-          {/* Waga owoców */}
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <label htmlFor="tincture-fruit-weight-input" className="text-sm font-semibold text-stone-900 dark:text-stone-50 block">
-                Waga owoców
-              </label>
-              <p className="text-xs text-stone-500">Ilość świeżych owoców</p>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setFruitKg((prev) => Math.max(0.1, Math.round((prev - 0.1) * 10) / 10))}
-                aria-label="Odejmij 0.1 kg"
-                className="size-9 rounded-xl border border-stone-300 dark:border-stone-700 bg-white/70 dark:bg-stone-800 flex items-center justify-center text-stone-700 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 active:scale-95 cursor-pointer"
-              >
-                <Minus className="size-4" />
-              </button>
-              <div className="flex items-center gap-1 bg-stone-950/5 dark:bg-white/5 border border-stone-300/50 dark:border-white/10 rounded-xl px-2.5 py-1">
-                <input
-                  id="tincture-fruit-weight-input"
-                  type="number"
-                  step="0.1"
-                  min="0.1"
-                  max="50"
-                  value={fruitKg}
-                  onChange={(e) => setFruitKg(Math.max(0.1, Number(e.target.value) || 0.1))}
-                  className="w-12 text-center font-bold text-base bg-transparent text-stone-900 dark:text-stone-50"
+              {tinctureRecipes.map((item) => (
+                <RecipeCard
+                  key={item.id}
+                  recipe={item}
+                  onSelect={(r) => onSelectRecipe?.(r.id)}
+                  onToggleFavorite={onToggleFavorite ? (id) => void onToggleFavorite(id) : () => {}}
                 />
-                <span className="text-xs font-semibold text-stone-500">kg</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setFruitKg((prev) => Math.round((prev + 0.1) * 10) / 10)}
-                aria-label="Dodaj 0.1 kg"
-                className="size-9 rounded-xl border border-stone-300 dark:border-stone-700 bg-white/70 dark:bg-stone-800 flex items-center justify-center text-stone-700 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-700 active:scale-95 cursor-pointer"
-              >
-                <Plus className="size-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Docelowa moc nalewki */}
-          <div className="space-y-1.5 pt-1">
-            <div className="flex items-center justify-between">
-              <label htmlFor="tincture-target-abv-input" className="text-sm font-semibold text-stone-900 dark:text-stone-50">
-                Docelowa moc gotowej nalewki
-              </label>
-              <span className="text-base font-bold text-rose-600 dark:text-rose-400 tabular-nums">
-                {targetAbv}% vol
-              </span>
-            </div>
-            <input
-              id="tincture-target-abv-input"
-              type="range"
-              min="20"
-              max="50"
-              step="1"
-              value={targetAbv}
-              onChange={(e) => setTargetAbv(Number(e.target.value))}
-              className="w-full accent-rose-600 cursor-pointer"
-            />
-            <div className="flex justify-between text-[11px] text-stone-600 dark:text-stone-400 font-mono">
-              <span>25% (lekka)</span>
-              <span>35% (tradycyjna)</span>
-              <span>45% (mocna)</span>
-            </div>
-          </div>
-        </GlassCard>
-
-        {/* Karta B: Alkohol bazowy */}
-        <GlassCard variant="default" padding="md" className="space-y-3.5">
-          <div className="flex items-center justify-between border-b border-stone-200/50 dark:border-white/10 pb-2.5">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-stone-700 dark:text-stone-300">
-              Używany alkohol bazowy
-            </h2>
-            <span className="text-xs text-stone-500">Moc wyjściowa</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {(Object.keys(TINCTURE_ALCOHOL_TYPES) as AlcoholTypeId[]).map((id) => {
-              const alc = TINCTURE_ALCOHOL_TYPES[id]
-              const isSelected = alcoholType === id
+              ))}
+            </section>
+          )}
+        </div>
+      ) : (
+        /* WIDOK: KALKULATOR NALEWEK */
+        <>
+          {/* 1. Kafelki wyboru nalewki */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            {(Object.keys(TINCTURE_PRESETS) as TinctureFruitId[]).map((id) => {
+              const item = TINCTURE_PRESETS[id]
+              const isSelected = selectedFruit === id
+              const emoji = id === 'malina' ? '🍇' : id === 'cytryna' ? '🍋' : id === 'wisnia' ? '🍒' : '🍏'
 
               return (
                 <button
                   key={id}
                   type="button"
-                  onClick={() => setAlcoholType(id)}
+                  onClick={() => handleSelectFruit(id)}
                   className={cn(
-                    'p-2.5 rounded-xl border text-left transition-all cursor-pointer text-xs',
+                    'flex flex-col text-left p-3 rounded-2xl border transition-all duration-200 cursor-pointer',
                     isSelected
-                      ? 'border-rose-500/60 bg-rose-500/10 font-bold text-stone-900 dark:text-stone-50 shadow-sm'
-                      : 'border-stone-200/70 dark:border-white/10 text-stone-600 dark:text-stone-400 hover:bg-stone-100/50 dark:hover:bg-stone-800/50',
+                      ? 'border-rose-500/60 bg-rose-500/10 shadow-lg shadow-rose-500/10 dark:border-rose-400/50 dark:bg-rose-500/15'
+                      : 'border-stone-900/10 bg-white/40 hover:bg-white/70 dark:border-white/10 dark:bg-stone-900/40 dark:hover:bg-stone-900/70',
                   )}
                 >
-                  <div className="font-semibold">{alc.name}</div>
-                  <div className="text-[10px] text-stone-500 mt-0.5 line-clamp-1">{alc.note}</div>
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span className="text-base">{emoji}</span>
+                    {isSelected && (
+                      <span className="flex size-4.5 items-center justify-center rounded-full bg-rose-600 text-white dark:bg-rose-500 dark:text-stone-950">
+                        <Check className="size-3 stroke-[3]" />
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-sm font-bold text-stone-900 dark:text-stone-50 mt-1">
+                    {item.name}
+                  </span>
+                  <span className="text-[11px] text-rose-700 dark:text-rose-300 font-medium mt-0.5">
+                    {item.steepingWeeks} maceracji
+                  </span>
                 </button>
               )
             })}
           </div>
 
-          {alcoholType === 'custom' && (
-            <div className="space-y-1 pt-1">
-              <div className="flex justify-between text-xs font-semibold">
-                <label htmlFor="tincture-custom-abv-input">Moc własnego alkoholu</label>
-                <span className="text-rose-600">{customAbv}%</span>
+          {/* 2. Karty wprowadzania parametrów */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Karta A: Ilość owoców */}
+            <GlassCard variant="default" padding="md" className="space-y-4">
+              <h2 className="text-sm font-bold text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
+                <span>{selectedFruit === 'malina' ? '🍇' : selectedFruit === 'cytryna' ? '🍋' : selectedFruit === 'wisnia' ? '🍒' : '🍏'}</span> Masa owoców
+              </h2>
+
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs font-medium">
+                  <label htmlFor="tincture-fruit-kg" className="text-stone-600 dark:text-stone-300">Waga owoców</label>
+                  <span className="font-bold text-rose-700 dark:text-rose-300 tabular-nums">
+                    {fruitKg.toFixed(1)} kg ({results.fruitGrams} g)
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <GlassButton
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    aria-label="Odejmij 0.5 kg"
+                    disabled={fruitKg <= 0.5}
+                    onClick={() => setFruitKg((prev) => Math.max(0.5, Math.round((prev - 0.5) * 10) / 10))}
+                    className="size-9 px-0 shrink-0"
+                  >
+                    <Minus className="size-3.5" />
+                  </GlassButton>
+                  <input
+                    id="tincture-fruit-kg"
+                    type="range"
+                    min={0.5}
+                    max={10.0}
+                    step={0.1}
+                    value={fruitKg}
+                    onChange={(e) => setFruitKg(Number(e.target.value))}
+                    className="w-full accent-rose-500 cursor-pointer"
+                  />
+                  <GlassButton
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    aria-label="Dodaj 0.5 kg"
+                    onClick={() => setFruitKg((prev) => Math.min(10, Math.round((prev + 0.5) * 10) / 10))}
+                    className="size-9 px-0 shrink-0"
+                  >
+                    <Plus className="size-3.5" />
+                  </GlassButton>
+                </div>
+                <div className="flex justify-between text-[10px] text-stone-500">
+                  <span>0.5 kg</span>
+                  <span>5.0 kg</span>
+                  <span>10 kg</span>
+                </div>
               </div>
-              <input
-                id="tincture-custom-abv-input"
-                type="range"
-                min="30"
-                max="95"
-                step="1"
-                value={customAbv}
-                onChange={(e) => setCustomAbv(Number(e.target.value))}
-                className="w-full accent-rose-600 cursor-pointer"
-              />
+
+              {/* Szacunek soku */}
+              <div className="pt-2 border-t border-stone-200/60 dark:border-white/10 flex justify-between items-center text-xs">
+                <span className="text-stone-500">Szacowany sok z owoców:</span>
+                <span className="font-semibold text-stone-800 dark:text-stone-200 tabular-nums">
+                  {results.estimatedJuiceMl} ml
+                </span>
+              </div>
+            </GlassCard>
+
+            {/* Karta B: Alkohol bazowy */}
+            <GlassCard variant="default" padding="md" className="space-y-4">
+              <h2 className="text-sm font-bold text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
+                <span>🥃</span> Rodzaj alkoholu
+              </h2>
+
+              <div className="space-y-1.5">
+                <label htmlFor="tincture-alcohol-type" className="text-xs font-medium text-stone-600 dark:text-stone-300">
+                  Alkohol do zalania owoców
+                </label>
+                <select
+                  id="tincture-alcohol-type"
+                  value={alcoholType}
+                  onChange={(e) => setAlcoholType(e.target.value as AlcoholTypeId)}
+                  className="w-full rounded-xl border border-stone-300 dark:border-white/15 bg-white/70 dark:bg-stone-800/80 px-3 py-2 text-xs font-semibold text-stone-900 dark:text-stone-50 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                >
+                  {(Object.keys(TINCTURE_ALCOHOL_TYPES) as AlcoholTypeId[]).map((typeId) => (
+                    <option key={typeId} value={typeId}>
+                      {TINCTURE_ALCOHOL_TYPES[typeId].name} ({Math.round(TINCTURE_ALCOHOL_TYPES[typeId].abv * 100)}% vol)
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-stone-500">
+                  {TINCTURE_ALCOHOL_TYPES[alcoholType].note}
+                </p>
+              </div>
+
+              {alcoholType === 'custom' && (
+                <div className="space-y-1.5 pt-2 border-t border-stone-200/60 dark:border-white/10">
+                  <div className="flex justify-between text-xs font-medium">
+                    <label htmlFor="tincture-custom-abv" className="text-stone-600 dark:text-stone-300">Własna moc alkoholu</label>
+                    <span className="font-bold text-rose-700 dark:text-rose-300 tabular-nums">
+                      {customAbv}% vol
+                    </span>
+                  </div>
+                  <input
+                    id="tincture-custom-abv"
+                    type="range"
+                    min={35}
+                    max={96}
+                    step={1}
+                    value={customAbv}
+                    onChange={(e) => setCustomAbv(Number(e.target.value))}
+                    className="w-full accent-rose-500 cursor-pointer"
+                  />
+                </div>
+              )}
+            </GlassCard>
+
+            {/* Karta C: Moc docelowa & Cukier */}
+            <GlassCard variant="default" padding="md" className="space-y-4">
+              <h2 className="text-sm font-bold text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
+                <span>🎯</span> Moc i słodycz
+              </h2>
+
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs font-medium">
+                  <label htmlFor="tincture-target-abv" className="text-stone-600 dark:text-stone-300">Moc gotowej nalewki</label>
+                  <span className="font-bold text-rose-700 dark:text-rose-300 tabular-nums">
+                    {targetAbv}% vol
+                  </span>
+                </div>
+                <input
+                  id="tincture-target-abv"
+                  type="range"
+                  min={20}
+                  max={60}
+                  step={1}
+                  value={targetAbv}
+                  onChange={(e) => setTargetAbv(Number(e.target.value))}
+                  className="w-full accent-rose-500 cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] text-stone-500">
+                  <span>25% (likierowa)</span>
+                  <span>35% (standard)</span>
+                  <span>50% (mocna)</span>
+                </div>
+              </div>
+
+              {/* Informacja o cukrze z ustawień */}
+              <div className="pt-2 border-t border-stone-200/60 dark:border-white/10 flex items-center justify-between text-xs">
+                <div>
+                  <span className="text-stone-500">Cukier w profilu:</span>
+                  <p className="font-bold text-stone-800 dark:text-stone-200">
+                    {currentSugarPerKg} g / kg
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsModalOpen(true)}
+                  className="text-rose-700 dark:text-rose-300 text-xs font-semibold hover:underline cursor-pointer"
+                >
+                  Zmień &rarr;
+                </button>
+              </div>
+            </GlassCard>
+          </div>
+
+          {/* Ostrzeżenie o zbyt niskim stężeniu */}
+          {results.isDilutionWarning && results.warningMessage && (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
+              <AlertTriangle className="size-4.5 shrink-0 text-amber-600 mt-0.5" />
+              <p className="leading-relaxed">{results.warningMessage}</p>
             </div>
           )}
-        </GlassCard>
-      </div>
 
-      {/* Ostrzeżenie jeśli owoce mocno rozcieńczają */}
-      {results.isDilutionWarning && results.warningMessage && (
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2.5">
-          <AlertTriangle className="size-4.5 shrink-0 text-amber-600 mt-0.5" />
-          <p className="leading-relaxed">{results.warningMessage}</p>
-        </div>
-      )}
-
-      {/* 3. WYNIKI WYMIAROWE (Karta receptury) */}
-      <GlassCard
-        variant="elevated"
-        padding="lg"
-        className="border-rose-500/40 shadow-xl bg-gradient-to-br from-white/90 via-rose-500/5 to-white/70 dark:from-stone-900/90 dark:via-rose-500/10 dark:to-stone-900/70"
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-stone-200/60 dark:border-white/10 pb-4">
-          <div>
-            <span className="text-xs font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-400">
-              Wyliczone proporcje dla {fruitKg} kg owoców &bull; Moc docelowa {results.actualFinalAbv}% vol
-            </span>
-            <h3 className="text-lg font-bold text-stone-900 dark:text-stone-50 mt-0.5">
-              Składniki gotowe do nastawienia nalewki
-            </h3>
-          </div>
-
-          <GlassButton
-            type="button"
-            variant="primary"
-            size="md"
-            isLoading={isSaving}
-            leftIcon={<ChefHat className="size-4" />}
-            onClick={() => void handleSaveToRecipes()}
+          {/* 3. WYNIKI WYMIAROWE (Karta receptury) */}
+          <GlassCard
+            variant="elevated"
+            padding="lg"
+            className="border-rose-500/40 shadow-xl bg-gradient-to-br from-white/90 via-rose-500/5 to-white/70 dark:from-stone-900/90 dark:via-rose-500/10 dark:to-stone-900/70"
           >
-            {saveSuccess ? 'Zapisano nalewkę!' : 'Zapisz przepis do bazy'}
-          </GlassButton>
-        </div>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-stone-200/60 dark:border-white/10 pb-4">
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-400">
+                  Wyliczone proporcje dla {fruitKg} kg owoców &bull; Moc docelowa {results.actualFinalAbv}% vol
+                </span>
+                <h3 className="text-lg font-bold text-stone-900 dark:text-stone-50 mt-0.5">
+                  Składniki gotowe do nastawienia nalewki
+                </h3>
+              </div>
 
-        {saveSuccess && (
-          <div className="mt-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 p-3 text-sm text-emerald-900 dark:text-emerald-200 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Check className="size-4.5 text-emerald-600" />
-              <span>Przepis na nalewkę został pomyślnie zapisany w Twojej książce przepisów!</span>
-            </div>
-            {onNavigateToRecipes && (
-              <button
+              <GlassButton
                 type="button"
-                onClick={onNavigateToRecipes}
-                className="text-xs font-bold underline hover:no-underline cursor-pointer"
+                variant="primary"
+                size="md"
+                isLoading={isSaving}
+                leftIcon={<ChefHat className="size-4" />}
+                onClick={() => void handleSaveToRecipes()}
               >
-                Zobacz w przepisach &rarr;
-              </button>
+                {saveSuccess ? 'Zapisano nalewkę!' : 'Zapisz przepis'}
+              </GlassButton>
+            </div>
+
+            {saveSuccess && (
+              <div className="mt-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 p-3 text-sm text-emerald-900 dark:text-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Check className="size-4.5 text-emerald-600 shrink-0" />
+                  <span>Przepis na nalewkę został pomyślnie zapisany w Twojej bazie przepisów!</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSubView('recipes')}
+                  className="text-xs font-bold underline hover:no-underline cursor-pointer text-emerald-800 dark:text-emerald-300 self-start sm:self-auto"
+                >
+                  Zobacz zapisane nalewki &rarr;
+                </button>
+              </div>
             )}
-          </div>
-        )}
 
-        {/* Siatka składników */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
-          {/* Alkohol */}
-          <div className="flex flex-col p-3 rounded-2xl bg-white/60 dark:bg-stone-800/60 border border-stone-200/50 dark:border-white/10">
-            <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">
-              🍸 {results.spirit95Ml > 0 ? 'Alkohol (1:1)' : 'Alkohol bazowy'}
-            </span>
-            <span className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1 tabular-nums">
-              {results.baseAlcoholMl}
-            </span>
-            <span className="text-[11px] text-stone-500">
-              {results.spirit95Ml > 0
-                ? `${results.spirit95Ml}ml spir. + ${results.vodka40Ml}ml wódki`
-                : `ml ${results.baseAlcoholName}`}
-            </span>
-          </div>
+            {/* Siatka składników */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
+              {/* Alkohol */}
+              <div className="flex flex-col p-3 rounded-2xl bg-white/60 dark:bg-stone-800/60 border border-stone-200/50 dark:border-white/10">
+                <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                  🍸 {results.spirit95Ml > 0 ? 'Alkohol (1:1)' : 'Alkohol bazowy'}
+                </span>
+                <span className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-1 tabular-nums">
+                  {results.baseAlcoholMl} ml
+                </span>
+                <span className="text-[11px] text-stone-500">
+                  {results.spirit95Ml > 0
+                    ? `${results.spirit95Ml}ml spirytusu + ${results.vodka40Ml}ml wódki`
+                    : `${results.baseAlcoholName}`}
+                </span>
+              </div>
 
-          {/* Woda */}
-          <div className="flex flex-col p-3 rounded-2xl bg-white/60 dark:bg-stone-800/60 border border-stone-200/50 dark:border-white/10">
-            <span className="text-xs font-semibold text-sky-600 dark:text-sky-400">💧 Woda do dolania</span>
-            <span className="text-2xl font-black text-sky-600 dark:text-sky-400 mt-1 tabular-nums">
-              {results.waterMl}
-            </span>
-            <span className="text-[11px] text-stone-500">
-              {results.waterMl === 0 ? 'Nie potrzeba dolewać' : 'ml (przegotowana)'}
-            </span>
-          </div>
+              {/* Woda */}
+              <div className="flex flex-col p-3 rounded-2xl bg-white/60 dark:bg-stone-800/60 border border-stone-200/50 dark:border-white/10">
+                <span className="text-xs font-semibold text-sky-600 dark:text-sky-400">💧 Woda do dolania</span>
+                <span className="text-2xl font-black text-sky-600 dark:text-sky-400 mt-1 tabular-nums">
+                  {results.waterMl} ml
+                </span>
+                <span className="text-[11px] text-stone-500">
+                  {results.waterMl === 0 ? 'Nie potrzeba dolewać' : 'ml (przegotowana)'}
+                </span>
+              </div>
 
-          {/* Cukier */}
-          <div className="flex flex-col p-3 rounded-2xl bg-white/60 dark:bg-stone-800/60 border border-stone-200/50 dark:border-white/10">
-            <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">🍬 Cukier</span>
-            <span className="text-2xl font-black text-amber-700 dark:text-amber-400 mt-1 tabular-nums">
-              {results.sugarGrams}
-            </span>
-            <span className="text-[11px] text-stone-500">
-              gramów ({currentSugarPerKg}g / kg owoców)
-            </span>
-          </div>
+              {/* Cukier */}
+              <div className="flex flex-col p-3 rounded-2xl bg-white/60 dark:bg-stone-800/60 border border-stone-200/50 dark:border-white/10">
+                <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">🍬 Cukier</span>
+                <span className="text-2xl font-black text-amber-700 dark:text-amber-400 mt-1 tabular-nums">
+                  {results.sugarGrams} g
+                </span>
+                <span className="text-[11px] text-stone-500">
+                  gramów ({currentSugarPerKg}g / kg owoców)
+                </span>
+              </div>
 
-          {/* Objętość końcowa */}
-          <div className="flex flex-col p-3 rounded-2xl bg-white/60 dark:bg-stone-800/60 border border-stone-200/50 dark:border-white/10">
-            <span className="text-xs font-semibold text-stone-500 dark:text-stone-400">🍾 Objętość trunku</span>
-            <span className="text-2xl font-black text-stone-900 dark:text-stone-50 mt-1 tabular-nums">
-              {Math.round(results.finalVolumeMl / 100) / 10} L
-            </span>
-            <span className="text-[11px] text-stone-500">
-              ok. {results.finalBottlesHalfLiter} butelki (0.5L)
-            </span>
-          </div>
-        </div>
+              {/* Objętość końcowa */}
+              <div className="flex flex-col p-3 rounded-2xl bg-white/60 dark:bg-stone-800/60 border border-stone-200/50 dark:border-white/10">
+                <span className="text-xs font-semibold text-stone-500 dark:text-stone-400">🍾 Objętość trunku</span>
+                <span className="text-2xl font-black text-stone-900 dark:text-stone-50 mt-1 tabular-nums">
+                  {Math.round(results.finalVolumeMl / 100) / 10} L
+                </span>
+                <span className="text-[11px] text-stone-500">
+                  ok. {results.finalBottlesHalfLiter} butelki (0.5L)
+                </span>
+              </div>
+            </div>
 
-        {/* Instrukcja krok po kroku */}
-        <div className="mt-5 space-y-2 border-t border-stone-200/60 dark:border-white/10 pt-4">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-stone-700 dark:text-stone-300">
-            Etapy przygotowania ({preset.steepingWeeks} maceracji)
-          </h4>
-          <ol className="space-y-1.5 text-xs text-stone-600 dark:text-stone-300 list-decimal list-inside leading-relaxed">
-            {preset.instructions.map((step, i) => (
-              <li key={i}>{step}</li>
-            ))}
-          </ol>
-        </div>
-      </GlassCard>
+            {/* Instrukcja krok po kroku */}
+            <div className="mt-5 space-y-2 border-t border-stone-200/60 dark:border-white/10 pt-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-stone-700 dark:text-stone-300">
+                Etapy przygotowania ({preset.steepingWeeks} maceracji)
+              </h4>
+              <ol className="space-y-1.5 text-xs text-stone-600 dark:text-stone-300 list-decimal list-inside leading-relaxed">
+                {preset.instructions.map((step, i) => (
+                  <li key={i}>{step}</li>
+                ))}
+              </ol>
+            </div>
+          </GlassCard>
 
-      {/* Modal ustawień profili cukru */}
-      <TinctureSettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => setIsSettingsModalOpen(false)}
-        currentProfiles={sugarProfiles}
-        onUpdateProfiles={(updated) => {
-          setSugarProfiles(updated)
-          saveTinctureSugarProfiles(updated)
-        }}
-      />
+          {/* Modal ustawień profili cukru */}
+          <TinctureSettingsModal
+            isOpen={isSettingsModalOpen}
+            onClose={() => setIsSettingsModalOpen(false)}
+            currentProfiles={sugarProfiles}
+            onUpdateProfiles={(updated) => {
+              setSugarProfiles(updated)
+              saveTinctureSugarProfiles(updated)
+            }}
+          />
+        </>
+      )}
     </div>
   )
 }
