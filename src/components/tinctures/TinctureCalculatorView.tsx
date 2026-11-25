@@ -10,6 +10,8 @@ import {
 } from 'lucide-react'
 import { GlassButton, GlassCard, cn } from '../ui'
 import { RecipeCard } from '../recipes/RecipeCard'
+import { RecipeGridToggle } from '../recipes/RecipeGridToggle'
+import { useRecipeGridLayout } from '../../hooks/useRecipeGridLayout'
 import { isTinctureRecipe } from '../recipes/recipeMeta'
 import type { RecipeInsert, RecipeRow } from '../../lib/supabase'
 import type { AlcoholTypeId, TinctureFruitId } from './tincturePresets'
@@ -38,6 +40,7 @@ export function TinctureCalculatorView({
   onToggleFavorite,
 }: TinctureCalculatorViewProps) {
   const [subView, setSubView] = useState<'calculator' | 'recipes'>('calculator')
+  const [gridLayout, setGridLayout] = useRecipeGridLayout()
 
   // Wybór owocu
   const [selectedFruit, setSelectedFruit] = useState<TinctureFruitId>('malina')
@@ -245,19 +248,29 @@ export function TinctureCalculatorView({
               </div>
             </GlassCard>
           ) : (
-            <section
-              aria-label="Zapisane nalewki"
-              className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
-            >
-              {tinctureRecipes.map((item) => (
-                <RecipeCard
-                  key={item.id}
-                  recipe={item}
-                  onSelect={(r) => onSelectRecipe?.(r.id)}
-                  onToggleFavorite={onToggleFavorite ? (id) => void onToggleFavorite(id) : () => {}}
-                />
-              ))}
-            </section>
+            <div className="space-y-3">
+              <div className="flex items-center justify-end">
+                <RecipeGridToggle layout={gridLayout} onChange={setGridLayout} />
+              </div>
+              <section
+                aria-label="Zapisane nalewki"
+                className={
+                  gridLayout === 'compact2'
+                    ? 'grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3'
+                    : 'grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3'
+                }
+              >
+                {tinctureRecipes.map((item) => (
+                  <RecipeCard
+                    key={item.id}
+                    recipe={item}
+                    compact={gridLayout === 'compact2'}
+                    onSelect={(r) => onSelectRecipe?.(r.id)}
+                    onToggleFavorite={onToggleFavorite ? (id) => void onToggleFavorite(id) : () => {}}
+                  />
+                ))}
+              </section>
+            </div>
           )}
         </div>
       ) : (
@@ -438,9 +451,9 @@ export function TinctureCalculatorView({
                   className="w-full accent-rose-500 cursor-pointer"
                 />
                 <div className="flex justify-between text-[10px] text-stone-500">
-                  <span>25% (likierowa)</span>
-                  <span>35% (standard)</span>
-                  <span>50% (mocna)</span>
+                  <span>20% (lekka)</span>
+                  <span>40% (standard)</span>
+                  <span>60% (mocna)</span>
                 </div>
               </div>
 

@@ -9,6 +9,8 @@ import {
 } from 'lucide-react'
 import { GlassButton, GlassCard, cn } from '../ui'
 import { RecipeCard } from '../recipes/RecipeCard'
+import { RecipeGridToggle } from '../recipes/RecipeGridToggle'
+import { useRecipeGridLayout } from '../../hooks/useRecipeGridLayout'
 import { isPizzaRecipe } from '../recipes/recipeMeta'
 import type { RecipeInsert, RecipeRow } from '../../lib/supabase'
 import type { PizzaStyleId } from './pizzaPresets'
@@ -31,6 +33,7 @@ export function PizzaCalculatorView({
   onToggleFavorite,
 }: PizzaCalculatorViewProps) {
   const [subView, setSubView] = useState<'calculator' | 'recipes'>('calculator')
+  const [gridLayout, setGridLayout] = useRecipeGridLayout()
   const [selectedStyle, setSelectedStyle] = useState<PizzaStyleId>('napoletana')
   const preset = PIZZA_PRESETS[selectedStyle]
 
@@ -268,19 +271,29 @@ export function PizzaCalculatorView({
               </div>
             </GlassCard>
           ) : (
-            <section
-              aria-label="Zapisane przepisy na pizzę"
-              className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
-            >
-              {pizzaRecipes.map((item) => (
-                <RecipeCard
-                  key={item.id}
-                  recipe={item}
-                  onSelect={(r) => onSelectRecipe?.(r.id)}
-                  onToggleFavorite={onToggleFavorite ? (id) => void onToggleFavorite(id) : () => {}}
-                />
-              ))}
-            </section>
+            <div className="space-y-3">
+              <div className="flex items-center justify-end">
+                <RecipeGridToggle layout={gridLayout} onChange={setGridLayout} />
+              </div>
+              <section
+                aria-label="Zapisane przepisy na pizzę"
+                className={
+                  gridLayout === 'compact2'
+                    ? 'grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3'
+                    : 'grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3'
+                }
+              >
+                {pizzaRecipes.map((item) => (
+                  <RecipeCard
+                    key={item.id}
+                    recipe={item}
+                    compact={gridLayout === 'compact2'}
+                    onSelect={(r) => onSelectRecipe?.(r.id)}
+                    onToggleFavorite={onToggleFavorite ? (id) => void onToggleFavorite(id) : () => {}}
+                  />
+                ))}
+              </section>
+            </div>
           )}
         </div>
       ) : (
@@ -435,9 +448,9 @@ export function PizzaCalculatorView({
                   className="w-full accent-sky-500 cursor-pointer"
                 />
                 <div className="flex justify-between text-[10px] text-stone-500">
-                  <span>55% (sztywna)</span>
+                  <span>50% (sztywna)</span>
                   <span>65% (klasyk)</span>
-                  <span>80% (wysoka)</span>
+                  <span>85% (wysoka)</span>
                 </div>
               </div>
 
@@ -459,31 +472,39 @@ export function PizzaCalculatorView({
                   onChange={(e) => setSaltPerKg(Number(e.target.value))}
                   className="w-full accent-stone-500 cursor-pointer"
                 />
+                <div className="flex justify-between text-[10px] text-stone-500">
+                  <span>20 g/kg</span>
+                  <span>28 g/kg</span>
+                  <span>35 g/kg</span>
+                </div>
               </div>
 
-              {/* Oliwa g/kg */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs font-medium">
-                  <label htmlFor="pizza-oil" className="text-stone-600 dark:text-stone-300">Oliwa na 1kg mąki</label>
-                  <span className="font-bold text-emerald-700 dark:text-emerald-300 tabular-nums">
-                    {oilPerKg} g/kg
-                  </span>
+              {/* Oliwa g/kg (ukryta dla Napoletany) */}
+              {selectedStyle !== 'napoletana' && (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-medium">
+                    <label htmlFor="pizza-oil" className="text-stone-600 dark:text-stone-300">Oliwa na 1kg mąki</label>
+                    <span className="font-bold text-emerald-700 dark:text-emerald-300 tabular-nums">
+                      {oilPerKg} g/kg
+                    </span>
+                  </div>
+                  <input
+                    id="pizza-oil"
+                    type="range"
+                    min={0}
+                    max={40}
+                    step={2}
+                    value={oilPerKg}
+                    onChange={(e) => setOilPerKg(Number(e.target.value))}
+                    className="w-full accent-emerald-500 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-stone-500">
+                    <span>0g (bez oliwy)</span>
+                    <span>20g (Rzymska)</span>
+                    <span>40g (Teglia)</span>
+                  </div>
                 </div>
-                <input
-                  id="pizza-oil"
-                  type="range"
-                  min={0}
-                  max={40}
-                  step={2}
-                  value={oilPerKg}
-                  onChange={(e) => setOilPerKg(Number(e.target.value))}
-                  className="w-full accent-emerald-500 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-stone-500">
-                  <span>0g (Napoletana)</span>
-                  <span>20g (Rzymska/Teglia)</span>
-                </div>
-              </div>
+              )}
             </GlassCard>
 
             {/* Karta C: Fermentacja i Drożdże */}
@@ -637,7 +658,12 @@ export function PizzaCalculatorView({
               </div>
             )}
 
-            <div className="mt-5 grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div
+              className={cn(
+                'mt-5 grid grid-cols-2 gap-3',
+                selectedStyle === 'napoletana' ? 'sm:grid-cols-4' : 'sm:grid-cols-5',
+              )}
+            >
               {/* Mąka */}
               <div className="flex flex-col p-3 rounded-2xl bg-white/60 dark:bg-stone-800/60 border border-stone-200/50 dark:border-white/10">
                 <span className="text-xs font-semibold text-stone-500 dark:text-stone-400">🌾 Mąka (100%)</span>
@@ -680,16 +706,18 @@ export function PizzaCalculatorView({
                 <span className="text-[11px] text-stone-500">({saltPerKg}g/kg mąki)</span>
               </div>
 
-              {/* Oliwa */}
-              <div className="flex flex-col p-3 rounded-2xl bg-white/60 dark:bg-stone-800/60 border border-stone-200/50 dark:border-white/10 col-span-2 sm:col-span-1">
-                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">🫒 Oliwa</span>
-                <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1 tabular-nums">
-                  {results.oilGrams} g
-                </span>
-                <span className="text-[11px] text-stone-500">
-                  {results.oilGrams === 0 ? 'Bez oliwy w cieście' : 'gramów (EVOO)'}
-                </span>
-              </div>
+              {/* Oliwa (ukryta dla Napoletany) */}
+              {selectedStyle !== 'napoletana' && (
+                <div className="flex flex-col p-3 rounded-2xl bg-white/60 dark:bg-stone-800/60 border border-stone-200/50 dark:border-white/10 col-span-2 sm:col-span-1">
+                  <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">🫒 Oliwa</span>
+                  <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1 tabular-nums">
+                    {results.oilGrams} g
+                  </span>
+                  <span className="text-[11px] text-stone-500">
+                    {results.oilGrams === 0 ? 'Bez oliwy w cieście' : 'gramów (EVOO)'}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Wskazówka wypiekowa dla wybranego stylu */}

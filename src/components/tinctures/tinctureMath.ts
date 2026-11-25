@@ -44,9 +44,12 @@ export function calculateTinctureRecipe(input: TinctureCalculationInput): Tinctu
   const targetRatio = safeTargetAbv / 100
 
   // Ustalenie stężenia alkoholu bazowego
-  let baseAbv = 0.95
-  let baseName = 'Spirytus 95%'
-  if (input.alcoholType === 'vodka_40') {
+  let baseAbv = 0.85
+  let baseName = 'Spirytus 85%'
+  if (input.alcoholType === 'spirit_95') {
+    baseAbv = 0.95
+    baseName = 'Spirytus 95%'
+  } else if (input.alcoholType === 'vodka_40') {
     baseAbv = 0.40
     baseName = 'Wódka 40%'
   } else if (input.alcoholType === 'mix_67') {

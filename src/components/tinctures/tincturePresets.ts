@@ -1,6 +1,6 @@
 export type TinctureFruitId = 'malina' | 'cytryna' | 'wisnia' | 'wlasna'
 
-export type AlcoholTypeId = 'spirit_95' | 'vodka_40' | 'mix_67' | 'custom'
+export type AlcoholTypeId = 'spirit_85' | 'spirit_95' | 'vodka_40' | 'mix_67' | 'custom'
 
 export interface TinctureFruitPreset {
   id: TinctureFruitId
@@ -28,7 +28,7 @@ export const TINCTURE_PRESETS: Record<TinctureFruitId, TinctureFruitPreset> = {
     defaultTargetAbv: 35,
     defaultSugarGramsPerKg: 300,
     sugarRange: { min: 150, max: 600, step: 25 },
-    defaultAlcoholType: 'mix_67',
+    defaultAlcoholType: 'spirit_85',
     steepingWeeks: '2–3 tygodnie',
     instructions: [
       'Oczyszczone maliny wrzuć do słoja i zalej alkoholem o mocy ok. 60–65%.',
@@ -49,7 +49,7 @@ export const TINCTURE_PRESETS: Record<TinctureFruitId, TinctureFruitPreset> = {
     defaultTargetAbv: 32,
     defaultSugarGramsPerKg: 380,
     sugarRange: { min: 200, max: 650, step: 25 },
-    defaultAlcoholType: 'spirit_95',
+    defaultAlcoholType: 'spirit_85',
     steepingWeeks: '2–4 dni (skórki)',
     instructions: [
       'Cytryny dokładnie sparz wrzątkiem i wyszoruj szczoteczką. Obierz samą żółtą skórkę (bez białego gorzkiego albedo).',
@@ -70,7 +70,7 @@ export const TINCTURE_PRESETS: Record<TinctureFruitId, TinctureFruitPreset> = {
     defaultTargetAbv: 38,
     defaultSugarGramsPerKg: 350,
     sugarRange: { min: 200, max: 600, step: 25 },
-    defaultAlcoholType: 'spirit_95',
+    defaultAlcoholType: 'spirit_85',
     steepingWeeks: '4–6 tygodni',
     instructions: [
       'Wiśnie umyj i usuń ogonki. Wydryluj owoce, zostawiając około 10–15% pestek dla szlachetnego migdałowego posmaku.',
@@ -91,7 +91,7 @@ export const TINCTURE_PRESETS: Record<TinctureFruitId, TinctureFruitPreset> = {
     defaultTargetAbv: 35,
     defaultSugarGramsPerKg: 300,
     sugarRange: { min: 100, max: 700, step: 25 },
-    defaultAlcoholType: 'mix_67',
+    defaultAlcoholType: 'spirit_85',
     steepingWeeks: '3–6 tygodni',
     instructions: [
       'Owoce dokładnie umyj, osusz i przygotuj (większe pokrój, twarde np. pigwę zetrzyj lub poszatkuj).',
@@ -104,6 +104,11 @@ export const TINCTURE_PRESETS: Record<TinctureFruitId, TinctureFruitPreset> = {
 }
 
 export const TINCTURE_ALCOHOL_TYPES: Record<AlcoholTypeId, { name: string; abv: number; note: string }> = {
+  spirit_85: {
+    name: 'Spirytus 85%',
+    abv: 0.85,
+    note: 'Spirytus rektyfikowany (85% vol)',
+  },
   spirit_95: {
     name: 'Spirytus 95%',
     abv: 0.95,

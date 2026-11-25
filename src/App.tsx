@@ -15,6 +15,8 @@ import {
 import { AuthScreen } from './components/auth/AuthScreen'
 import { RecipeCard } from './components/recipes/RecipeCard'
 import { RecipeDetailView } from './components/recipes/RecipeDetailView'
+import { RecipeGridToggle } from './components/recipes/RecipeGridToggle'
+import { useRecipeGridLayout } from './hooks/useRecipeGridLayout'
 import {
   RECIPE_CATEGORIES,
   isPizzaRecipe,
@@ -160,6 +162,7 @@ export function App() {
 
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedFilter, setSelectedFilter] = useState<FilterOption>('Wszystkie')
+  const [gridLayout, setGridLayout] = useRecipeGridLayout()
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null)
   const [recipeHistory, setRecipeHistory] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState<NavigationTab>('recipes')
@@ -542,7 +545,7 @@ export function App() {
                 <div
                   className={cn(
                     activeTab === 'pizza'
-                      ? 'tab-view-enter pb-28 pt-[calc(env(safe-area-inset-top,0px)+1rem)]'
+                      ? 'tab-view-enter pb-28 pt-[calc(env(safe-area-inset-top,0px)+0.25rem)]'
                       : 'hidden',
                   )}
                 >
@@ -564,7 +567,7 @@ export function App() {
                 <div
                   className={cn(
                     activeTab === 'tinctures'
-                      ? 'tab-view-enter pb-28 pt-[calc(env(safe-area-inset-top,0px)+1rem)]'
+                      ? 'tab-view-enter pb-28 pt-[calc(env(safe-area-inset-top,0px)+0.25rem)]'
                       : 'hidden',
                   )}
                 >
@@ -588,7 +591,7 @@ export function App() {
                     activeTab === 'recipes' ? 'tab-view-enter pb-28' : 'hidden',
                   )}
                 >
-                <header className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pt-[calc(env(safe-area-inset-top,0px)+1.5rem)] sm:gap-5 sm:px-6">
+                <header className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pt-[calc(env(safe-area-inset-top,0px)+0.5rem)] sm:gap-5 sm:px-6">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="mb-1.5 flex items-center gap-2">
@@ -865,19 +868,29 @@ export function App() {
                     </GlassCard>
                   ) : (
                     /* Siatka kart przepisów */
-                    <section
-                      aria-label="Lista przepisów"
-                      className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
-                    >
-                      {filteredRecipes.map((recipe) => (
-                        <RecipeCard
-                          key={recipe.id}
-                          recipe={recipe}
-                          onSelect={(item) => handleSelectRecipe(item.id)}
-                          onToggleFavorite={toggleFavorite}
-                        />
-                      ))}
-                    </section>
+                    <>
+                      <div className="flex items-center justify-end">
+                        <RecipeGridToggle layout={gridLayout} onChange={setGridLayout} />
+                      </div>
+                      <section
+                        aria-label="Lista przepisów"
+                        className={
+                          gridLayout === 'compact2'
+                            ? 'grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3'
+                            : 'grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3'
+                        }
+                      >
+                        {filteredRecipes.map((recipe) => (
+                          <RecipeCard
+                            key={recipe.id}
+                            recipe={recipe}
+                            compact={gridLayout === 'compact2'}
+                            onSelect={(item) => handleSelectRecipe(item.id)}
+                            onToggleFavorite={toggleFavorite}
+                          />
+                        ))}
+                      </section>
+                    </>
                   )}
                 </main>
                 </div>
