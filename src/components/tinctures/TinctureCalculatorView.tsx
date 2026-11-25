@@ -5,7 +5,7 @@ import {
   ChefHat,
   Minus,
   Plus,
-  Sliders,
+  Settings,
   Wine,
 } from 'lucide-react'
 import { GlassButton, GlassCard, cn } from '../ui'
@@ -163,10 +163,10 @@ export function TinctureCalculatorView({
   return (
     <div className="flex flex-col gap-6 max-w-4xl mx-auto px-4 py-4 sm:px-6">
       {/* Nagłówek kalkulatora nalewek */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="space-y-1">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 space-y-1">
           <div className="flex items-center gap-2">
-            <span className="inline-flex size-9 items-center justify-center rounded-2xl bg-rose-500/15 text-rose-700 dark:text-rose-300">
+            <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-2xl bg-rose-500/15 text-rose-700 dark:text-rose-300">
               <Wine className="size-5" />
             </span>
             <h1 className="text-xl sm:text-2xl font-bold text-stone-900 dark:text-stone-50">
@@ -182,12 +182,12 @@ export function TinctureCalculatorView({
           <GlassButton
             type="button"
             variant="secondary"
-            size="sm"
-            leftIcon={<Sliders className="size-3.5" />}
+            size="md"
+            aria-label="Ustawienia cukru"
             onClick={() => setIsSettingsModalOpen(true)}
-            className="self-start sm:self-auto"
+            className="size-11 shrink-0 !gap-0 !px-0"
           >
-            Ustawienia cukru
+            <Settings className="size-4.5" aria-hidden="true" />
           </GlassButton>
         )}
       </div>
