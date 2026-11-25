@@ -23,7 +23,7 @@ const TABS: TabItem[] = [
   },
   {
     id: 'pizza',
-    label: 'Pizza KMP',
+    label: 'Pizza',
     icon: Pizza,
   },
   {

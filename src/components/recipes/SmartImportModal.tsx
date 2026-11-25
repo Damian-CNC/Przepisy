@@ -725,31 +725,52 @@ export function SmartImportModal({
           )}
         </div>
 
-        {/* Stan ładowania AI z efektem MagicUI shimmer */}
+        {/* Stan ładowania z rysującą się czapką kucharską */}
         {isAnalyzing ? (
           <GlassCard variant="elevated" padding="lg" className="magic-shimmer">
             <div role="status" aria-live="polite" className="flex flex-col items-center gap-4 py-6 text-center">
-              <div className="inline-flex size-16 items-center justify-center rounded-3xl border border-amber-500/30 bg-amber-500/15 text-amber-700 dark:text-amber-300">
-                <Sparkles className="size-8 animate-pulse motion-reduce:animate-none" aria-hidden="true" />
+              <div className="inline-flex size-20 items-center justify-center rounded-3xl border border-amber-500/30 bg-amber-500/12 text-amber-700 shadow-inner dark:border-amber-400/30 dark:bg-amber-500/15 dark:text-amber-300">
+                <svg
+                  viewBox="0 0 100 100"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden="true"
+                  className="size-13"
+                >
+                  {/* Subtelny ślad linii czapki */}
+                  <path
+                    d="M 28 72 L 25 55 C 12 53, 11 31, 28 30 C 33 14, 67 14, 72 30 C 89 31, 88 53, 75 55 L 72 79 Q 50 72, 32 77"
+                    stroke="currentColor"
+                    strokeOpacity="0.14"
+                    strokeWidth="4.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  {/* Rysująca się linia od lewego dolnego rogu */}
+                  <path
+                    d="M 28 72 L 25 55 C 12 53, 11 31, 28 30 C 33 14, 67 14, 72 30 C 89 31, 88 53, 75 55 L 72 79 Q 50 72, 32 77"
+                    pathLength="100"
+                    stroke="currentColor"
+                    strokeWidth="4.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="chef-hat-draw"
+                  />
+                </svg>
               </div>
 
               <div className="space-y-1.5">
                 <p className="text-lg font-semibold text-stone-900 dark:text-stone-50">
                   {activeTab === 'discover'
                     ? useWebSearch
-                      ? 'Szef Kuchni AI przeszukuje sieć i układa kroki przepisu...'
-                      : 'Szef Kuchni AI tworzy autorski przepis z Twoich składników...'
-                    : 'AI mieli przepis, tłumaczy na polski i przelicza składniki...'}
+                      ? 'Szukamy najlepszej inspiracji i układamy przepis...'
+                      : 'Komponujemy autorski przepis z Twoich składników...'
+                    : 'Spisujemy przepis do Twojej książki kucharskiej...'}
                 </p>
                 <p className="text-sm text-stone-600 dark:text-stone-300">
-                  Dzielimy też instrukcje na wygodne kroki z minutnikami. To potrwa tylko chwilę.
+                  Porządkujemy składniki, dobieramy proporcje i dzielimy przygotowanie na przejrzyste kroki.
                 </p>
               </div>
-
-              <progress
-                aria-label="Trwa przetwarzanie przepisu przez AI"
-                className="h-2 w-full max-w-xs overflow-hidden rounded-full accent-amber-600 dark:accent-amber-400"
-              />
 
               <GlassButton
                 type="button"
@@ -757,7 +778,7 @@ export function SmartImportModal({
                 size="md"
                 onClick={handleCancelAnalysis}
               >
-                Anuluj analizę
+                Anuluj
               </GlassButton>
             </div>
           </GlassCard>

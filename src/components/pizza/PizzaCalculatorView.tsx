@@ -91,7 +91,7 @@ export function PizzaCalculatorView({
       const yeastLabel = yeastType === 'fresh' ? 'Drożdże świeże' : 'Drożdże instant (suche)'
 
       const recipeTitle = `${preset.name} (${balls} ${balls === 1 ? 'porcja' : balls < 5 ? 'kulki' : 'kulek'} × ${ballWeight}g)`
-      const recipeDescription = `Wyliczone proporcje ciasta na ${preset.name} wg KMP: łączna masa ${results.totalDoughWeight}g, hydratacja ${hydration}%, fermentacja ${totalHours}h (${results.fridgeHours}h lodówka + ${results.roomHours}h temp. pokojowa ${roomTemp}°C).`
+      const recipeDescription = `Wyliczone proporcje ciasta na ${preset.name}: łączna masa ${results.totalDoughWeight}g, hydratacja ${hydration}%, fermentacja ${totalHours}h (${results.fridgeHours}h lodówka + ${results.roomHours}h temp. pokojowa ${roomTemp}°C).`
 
       const ingredients = [
         { name: 'Mąka pszenna (najlepiej typ 00)', amount: results.flourGrams, unit: 'g', category: 'Suche' },
@@ -207,7 +207,7 @@ export function PizzaCalculatorView({
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-stone-600 dark:text-stone-400">
-            Precyzyjne proporcje ciasta wg Baker's Percentages &amp; Klubu Miłośników Pizzy
+            Precyzyjne proporcje ciasta i fermentacji na domową pizzę
           </p>
         </div>
       </div>
@@ -436,7 +436,7 @@ export function PizzaCalculatorView({
                 />
                 <div className="flex justify-between text-[10px] text-stone-500">
                   <span>55% (sztywna)</span>
-                  <span>65% (KMP klasyk)</span>
+                  <span>65% (klasyk)</span>
                   <span>80% (wysoka)</span>
                 </div>
               </div>

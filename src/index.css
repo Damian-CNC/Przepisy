@@ -32,6 +32,43 @@ body {
   will-change: opacity, transform;
 }
 
+@keyframes chef-hat-draw {
+  0% {
+    stroke-dashoffset: 100;
+    opacity: 1;
+  }
+  65% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  84% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  97% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+  100% {
+    stroke-dashoffset: 100;
+    opacity: 0;
+  }
+}
+
+.chef-hat-draw {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
+  animation: chef-hat-draw 2.4s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chef-hat-draw {
+    animation: none;
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
 /* Zapobieganie automatycznemu powiększaniu widoku (iOS Safari auto-zoom) przy kliknięciu w pola formularza */
 @media (max-width: 768px) {
   input,
