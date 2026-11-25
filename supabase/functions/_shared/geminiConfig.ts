@@ -136,12 +136,12 @@ export function loadGeminiConfig(
 
   const attemptTimeoutMs = parsePositiveInt(
     envGetter("GEMINI_ATTEMPT_TIMEOUT_MS"),
-    14000,
+    25000,
     "GEMINI_ATTEMPT_TIMEOUT_MS",
   );
   const totalTimeoutMs = parsePositiveInt(
     envGetter("GEMINI_TOTAL_TIMEOUT_MS"),
-    40000,
+    90000,
     "GEMINI_TOTAL_TIMEOUT_MS",
   );
 

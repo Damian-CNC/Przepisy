@@ -618,45 +618,14 @@ export function PizzaCalculatorView({
 
           {/* 3. Panel wyników – dokładne składniki do zważenia */}
           <GlassCard variant="elevated" padding="lg" className="border-amber-500/30">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-stone-200/60 dark:border-white/10">
-              <div>
-                <span className="text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-                  Wynik obliczeń dla {balls} {balls === 1 ? 'porcji' : 'porcji'} ({results.totalDoughWeight}g ciasta)
-                </span>
-                <h3 className="text-lg font-bold text-stone-900 dark:text-stone-50 mt-0.5">
-                  Składniki gotowe do odmierzenia
-                </h3>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <GlassButton
-                  type="button"
-                  variant="primary"
-                  size="md"
-                  isLoading={isSaving}
-                  leftIcon={<ChefHat className="size-4" />}
-                  onClick={() => void handleSaveToRecipes()}
-                >
-                  {saveSuccess ? 'Zapisano przepis!' : 'Zapisz przepis'}
-                </GlassButton>
-              </div>
+            <div className="pb-4 border-b border-stone-200/60 dark:border-white/10">
+              <span className="text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                Wynik obliczeń dla {balls} {balls === 1 ? 'porcji' : 'porcji'} ({results.totalDoughWeight}g ciasta)
+              </span>
+              <h3 className="text-lg font-bold text-stone-900 dark:text-stone-50 mt-0.5">
+                Składniki gotowe do odmierzenia
+              </h3>
             </div>
-
-            {saveSuccess && (
-              <div className="mt-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 p-3 text-sm text-emerald-900 dark:text-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Check className="size-4.5 text-emerald-600 shrink-0" />
-                  <span>Przepis został pomyślnie zapisany w Twojej bazie przepisów!</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSubView('recipes')}
-                  className="text-xs font-bold underline hover:no-underline cursor-pointer text-emerald-800 dark:text-emerald-300 self-start sm:self-auto"
-                >
-                  Zobacz zapisane pizze &rarr;
-                </button>
-              </div>
-            )}
 
             <div
               className={cn(
@@ -726,6 +695,37 @@ export function PizzaCalculatorView({
               <div>
                 <strong>Wypiek:</strong> {preset.bakingTempNote}. {preset.description}
               </div>
+            </div>
+
+            {/* Przycisk zapisu przepisu pod składnikami */}
+            <div className="mt-5 flex flex-col gap-3">
+              <GlassButton
+                type="button"
+                variant="primary"
+                size="md"
+                fullWidth
+                isLoading={isSaving}
+                leftIcon={<ChefHat className="size-4" />}
+                onClick={() => void handleSaveToRecipes()}
+              >
+                {saveSuccess ? 'Zapisano przepis!' : 'Dodaj przepis'}
+              </GlassButton>
+
+              {saveSuccess && (
+                <div className="rounded-xl bg-emerald-500/15 border border-emerald-500/30 p-3 text-sm text-emerald-900 dark:text-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Check className="size-4.5 text-emerald-600 shrink-0" />
+                    <span>Przepis został pomyślnie zapisany w Twojej bazie przepisów!</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSubView('recipes')}
+                    className="text-xs font-bold underline hover:no-underline cursor-pointer text-emerald-800 dark:text-emerald-300 self-start sm:self-auto"
+                  >
+                    Zobacz zapisane pizze &rarr;
+                  </button>
+                </div>
+              )}
             </div>
           </GlassCard>
         </>

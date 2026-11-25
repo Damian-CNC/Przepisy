@@ -490,43 +490,14 @@ export function TinctureCalculatorView({
             padding="lg"
             className="border-rose-500/40 shadow-xl bg-gradient-to-br from-white/90 via-rose-500/5 to-white/70 dark:from-stone-900/90 dark:via-rose-500/10 dark:to-stone-900/70"
           >
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-stone-200/60 dark:border-white/10 pb-4">
-              <div>
-                <span className="text-xs font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-400">
-                  Wyliczone proporcje dla {fruitKg} kg owoców &bull; Moc docelowa {results.actualFinalAbv}% vol
-                </span>
-                <h3 className="text-lg font-bold text-stone-900 dark:text-stone-50 mt-0.5">
-                  Składniki gotowe do nastawienia nalewki
-                </h3>
-              </div>
-
-              <GlassButton
-                type="button"
-                variant="primary"
-                size="md"
-                isLoading={isSaving}
-                leftIcon={<ChefHat className="size-4" />}
-                onClick={() => void handleSaveToRecipes()}
-              >
-                {saveSuccess ? 'Zapisano nalewkę!' : 'Zapisz przepis'}
-              </GlassButton>
+            <div className="border-b border-stone-200/60 dark:border-white/10 pb-4">
+              <span className="text-xs font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-400">
+                Wyliczone proporcje dla {fruitKg} kg owoców &bull; Moc docelowa {results.actualFinalAbv}% vol
+              </span>
+              <h3 className="text-lg font-bold text-stone-900 dark:text-stone-50 mt-0.5">
+                Składniki gotowe do nastawienia nalewki
+              </h3>
             </div>
-
-            {saveSuccess && (
-              <div className="mt-4 rounded-xl bg-emerald-500/15 border border-emerald-500/30 p-3 text-sm text-emerald-900 dark:text-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Check className="size-4.5 text-emerald-600 shrink-0" />
-                  <span>Przepis na nalewkę został pomyślnie zapisany w Twojej bazie przepisów!</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSubView('recipes')}
-                  className="text-xs font-bold underline hover:no-underline cursor-pointer text-emerald-800 dark:text-emerald-300 self-start sm:self-auto"
-                >
-                  Zobacz zapisane nalewki &rarr;
-                </button>
-              </div>
-            )}
 
             {/* Siatka składników */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
@@ -577,6 +548,37 @@ export function TinctureCalculatorView({
                   ok. {results.finalBottlesHalfLiter} butelki (0.5L)
                 </span>
               </div>
+            </div>
+
+            {/* Przycisk zapisu przepisu pod składnikami */}
+            <div className="mt-5 flex flex-col gap-3">
+              <GlassButton
+                type="button"
+                variant="primary"
+                size="md"
+                fullWidth
+                isLoading={isSaving}
+                leftIcon={<ChefHat className="size-4" />}
+                onClick={() => void handleSaveToRecipes()}
+              >
+                {saveSuccess ? 'Zapisano nalewkę!' : 'Dodaj przepis'}
+              </GlassButton>
+
+              {saveSuccess && (
+                <div className="rounded-xl bg-emerald-500/15 border border-emerald-500/30 p-3 text-sm text-emerald-900 dark:text-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Check className="size-4.5 text-emerald-600 shrink-0" />
+                    <span>Przepis na nalewkę został pomyślnie zapisany w Twojej bazie przepisów!</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSubView('recipes')}
+                    className="text-xs font-bold underline hover:no-underline cursor-pointer text-emerald-800 dark:text-emerald-300 self-start sm:self-auto"
+                  >
+                    Zobacz zapisane nalewki &rarr;
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Instrukcja krok po kroku */}

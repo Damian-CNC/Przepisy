@@ -353,7 +353,7 @@ function normalizeNutrition(raw: unknown): RecipeNutrition {
   return Object.keys(result).length > 0 ? result : null
 }
 
-const IMPORT_TIMEOUT_MS = 55_000
+const IMPORT_TIMEOUT_MS = 120_000
 
 interface InvokeEdgeFunctionOptions {
   signal?: AbortSignal
@@ -406,7 +406,7 @@ async function invokeEdgeFunction<TResponse>(
     if (timedOut) {
       throw new Error(
         options?.timeoutErrorMsg ??
-          'Przetwarzanie trwało zbyt długo (ponad 45 s). Spróbuj ponownie.',
+          'Przetwarzanie trwało zbyt długo (ponad 2 min). Spróbuj ponownie.',
       )
     }
     if (options?.signal?.aborted) {
@@ -528,7 +528,7 @@ export async function importRecipeWithAi(payload: ImportRecipePayload): Promise<
       timeoutMs: IMPORT_TIMEOUT_MS,
       authErrorMsg: 'Brak uprawnień do importu AI. Zaloguj się ponownie i spróbuj jeszcze raz.',
       timeoutErrorMsg:
-        'Przetwarzanie trwało zbyt długo (ponad 45 s). Wklej opis rolki ręcznie poniżej lub użyj zakładki „Ze zdjęcia / Zrzutu”.',
+        'Przetwarzanie trwało zbyt długo (ponad 2 min). Wklej opis rolki ręcznie poniżej lub użyj zakładki „Ze zdjęcia / Zrzutu”.',
     },
   )
 
