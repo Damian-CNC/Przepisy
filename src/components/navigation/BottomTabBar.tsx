@@ -62,7 +62,7 @@ export function BottomTabBar({ activeTab, onSelectTab, hidden = false }: BottomT
         {/* Płynny wskaźnik aktywnej zakładki na GPU (translate3d bez przeliczania layoutu) */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-y-1.5 left-1.5 w-[calc((100%-0.75rem)/3)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform motion-reduce:transition-none"
+          className="pointer-events-none absolute inset-y-1.5 left-1.5 w-[calc((100%-0.75rem)/3)] transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform motion-reduce:transition-none"
           style={{ transform: `translate3d(${activeIndex * 100}%, 0, 0)` }}
         >
           <div
@@ -87,7 +87,7 @@ export function BottomTabBar({ activeTab, onSelectTab, hidden = false }: BottomT
               aria-current={isActive ? 'page' : undefined}
               className={cn(
                 'group relative z-10 flex flex-col items-center justify-center gap-0.5 rounded-full py-1.5 px-2.5',
-                'cursor-pointer select-none transition-colors duration-200 outline-none',
+                'cursor-pointer select-none transition-colors duration-300 outline-none',
                 isActive
                   ? 'text-amber-700 dark:text-amber-300'
                   : 'text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200',
@@ -96,7 +96,7 @@ export function BottomTabBar({ activeTab, onSelectTab, hidden = false }: BottomT
               {/* Ikona z płynną skalą */}
               <div
                 className={cn(
-                  'relative flex size-6 items-center justify-center transition-transform duration-200 ease-out will-change-transform',
+                  'relative flex size-6 items-center justify-center transition-transform duration-300 ease-out will-change-transform',
                   isActive ? 'scale-110' : 'scale-100 group-hover:scale-105',
                 )}
               >
@@ -109,7 +109,7 @@ export function BottomTabBar({ activeTab, onSelectTab, hidden = false }: BottomT
               {/* Etykieta */}
               <span
                 className={cn(
-                  'relative text-[11px] tracking-tight transition-colors duration-200',
+                  'relative text-[11px] tracking-tight transition-colors duration-300',
                   isActive ? 'font-bold' : 'font-medium',
                 )}
               >

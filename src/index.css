@@ -19,7 +19,7 @@ body {
 @keyframes tab-view-enter {
   from {
     opacity: 0;
-    transform: translate3d(0, 8px, 0);
+    transform: translate3d(0, 12px, 0);
   }
   to {
     opacity: 1;
@@ -28,7 +28,7 @@ body {
 }
 
 .tab-view-enter {
-  animation: tab-view-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: tab-view-enter 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
   will-change: opacity, transform;
 }
 
