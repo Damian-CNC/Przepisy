@@ -687,55 +687,63 @@ export function App() {
                     Dodaj przepis
                   </GlassButton>
 
-                  {/* Pływający pasek wyszukiwania w semantycznym elemencie <search> */}
-                  <search>
-                    <form
-                      onSubmit={(e) => e.preventDefault()}
-                      className={cn(
-                        'flex items-center gap-2 rounded-3xl px-3 py-1.5',
-                        'backdrop-blur-2xl backdrop-saturate-150',
-                        'bg-white/70 dark:bg-zinc-900/65',
-                        'border border-white/50 dark:border-white/15',
-                        'shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.65),0_10px_32px_0_rgba(28,25,23,0.08)]',
-                        'dark:shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.12),0_14px_38px_0_rgba(0,0,0,0.45)]',
-                      )}
-                    >
-                      <label htmlFor="recipe-search" className="sr-only">
-                        Szukaj przepisu po nazwie lub składniku
-                      </label>
-                      <Search
-                        className="ml-1.5 size-5 shrink-0 text-stone-500 dark:text-stone-400"
-                        aria-hidden="true"
-                      />
-                      <input
-                        id="recipe-search"
-                        name="q"
-                        type="search"
-                        autoCorrect="off"
-                        autoCapitalize="none"
-                        spellCheck={false}
-                        enterKeyHint="search"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Szukaj po tytule, składniku lub tagu..."
+                  {/* Pływający pasek wyszukiwania + przełącznik widoku kafelków po prawej */}
+                  <div className="flex items-center gap-2.5">
+                    <search className="min-w-0 flex-1">
+                      <form
+                        onSubmit={(e) => e.preventDefault()}
                         className={cn(
-                          'min-h-12 w-full bg-transparent text-base text-stone-900 placeholder:text-stone-500',
-                          'dark:text-stone-50 dark:placeholder:text-stone-400',
-                          'focus:outline-none',
+                          'flex items-center gap-2 rounded-2xl px-3 py-0.5',
+                          'backdrop-blur-2xl backdrop-saturate-150',
+                          'bg-white/70 dark:bg-zinc-900/65',
+                          'border border-white/50 dark:border-white/15',
+                          'shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.65),0_10px_32px_0_rgba(28,25,23,0.08)]',
+                          'dark:shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.12),0_14px_38px_0_rgba(0,0,0,0.45)]',
                         )}
-                      />
-                      {searchQuery && (
-                        <button
-                          type="button"
-                          aria-label="Wyczyść wyszukiwanie"
-                          onClick={() => setSearchQuery('')}
-                          className="inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-stone-600 hover:bg-stone-900/5 dark:text-stone-300 dark:hover:bg-white/10"
-                        >
-                          <X className="size-4" aria-hidden="true" />
-                        </button>
-                      )}
-                    </form>
-                  </search>
+                      >
+                        <label htmlFor="recipe-search" className="sr-only">
+                          Szukaj przepisu po nazwie lub składniku
+                        </label>
+                        <Search
+                          className="ml-1 size-4.5 shrink-0 text-stone-500 dark:text-stone-400"
+                          aria-hidden="true"
+                        />
+                        <input
+                          id="recipe-search"
+                          name="q"
+                          type="search"
+                          autoCorrect="off"
+                          autoCapitalize="none"
+                          spellCheck={false}
+                          enterKeyHint="search"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="Szukaj po tytule, składniku lub tagu..."
+                          className={cn(
+                            'min-h-10 w-full bg-transparent text-base text-stone-900 placeholder:text-stone-500',
+                            'dark:text-stone-50 dark:placeholder:text-stone-400',
+                            'focus:outline-none',
+                          )}
+                        />
+                        {searchQuery && (
+                          <button
+                            type="button"
+                            aria-label="Wyczyść wyszukiwanie"
+                            onClick={() => setSearchQuery('')}
+                            className="inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-stone-600 hover:bg-stone-900/5 dark:text-stone-300 dark:hover:bg-white/10"
+                          >
+                            <X className="size-4" aria-hidden="true" />
+                          </button>
+                        )}
+                      </form>
+                    </search>
+
+                    <RecipeGridToggle
+                      layout={gridLayout}
+                      onChange={setGridLayout}
+                      className="h-[46px]"
+                    />
+                  </div>
 
                   {/* Pigułki filtrów kategorii */}
                   <div
@@ -868,29 +876,24 @@ export function App() {
                     </GlassCard>
                   ) : (
                     /* Siatka kart przepisów */
-                    <>
-                      <div className="flex items-center justify-end">
-                        <RecipeGridToggle layout={gridLayout} onChange={setGridLayout} />
-                      </div>
-                      <section
-                        aria-label="Lista przepisów"
-                        className={
-                          gridLayout === 'compact2'
-                            ? 'grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3'
-                            : 'grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3'
-                        }
-                      >
-                        {filteredRecipes.map((recipe) => (
-                          <RecipeCard
-                            key={recipe.id}
-                            recipe={recipe}
-                            compact={gridLayout === 'compact2'}
-                            onSelect={(item) => handleSelectRecipe(item.id)}
-                            onToggleFavorite={toggleFavorite}
-                          />
-                        ))}
-                      </section>
-                    </>
+                    <section
+                      aria-label="Lista przepisów"
+                      className={
+                        gridLayout === 'compact2'
+                          ? 'grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3'
+                          : 'grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3'
+                      }
+                    >
+                      {filteredRecipes.map((recipe) => (
+                        <RecipeCard
+                          key={recipe.id}
+                          recipe={recipe}
+                          compact={gridLayout === 'compact2'}
+                          onSelect={(item) => handleSelectRecipe(item.id)}
+                          onToggleFavorite={toggleFavorite}
+                        />
+                      ))}
+                    </section>
                   )}
                 </main>
                 </div>
