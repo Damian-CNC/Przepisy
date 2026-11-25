@@ -34,6 +34,7 @@ import {
   GlassPill,
   cn,
 } from './components/ui'
+import { ChefHatLoader } from './components/ui/ChefHatLoader'
 import { useAuth } from './hooks/useAuth'
 import { useRecipes } from './hooks/useRecipes'
 import { useWakeLock } from './hooks/useWakeLock'
@@ -419,16 +420,12 @@ export function App() {
 
         {isAuthLoading ? (
           <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col items-center justify-center px-4">
-            <GlassCard variant="elevated" padding="lg" className="w-full text-center">
-              <div className="flex flex-col items-center gap-4">
-                <div className="inline-flex size-14 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-700 dark:text-amber-300">
-                  <ChefHat className="size-7 animate-pulse motion-reduce:animate-none" aria-hidden="true" />
-                </div>
-                <p className="text-base font-medium text-stone-700 dark:text-stone-200">
-                  Otwieramy Waszą książkę kucharską...
-                </p>
-              </div>
-            </GlassCard>
+            <div role="status" aria-live="polite" className="flex flex-col items-center gap-3 text-center">
+              <ChefHatLoader />
+              <p className="text-base font-medium text-stone-700 dark:text-stone-200">
+                Otwieramy Waszą książkę kucharską...
+              </p>
+            </div>
           </main>
         ) : !user ? (
           <AuthScreen
@@ -802,26 +799,18 @@ export function App() {
                     </div>
                   )}
 
-                  {/* Szkielety ładowania */}
+                  {/* Ładowanie przepisów – animowana czapka kucharska */}
                   {isRecipesLoading && recipes.length === 0 ? (
                     <section
                       aria-label="Ładowanie przepisów"
-                      className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
+                      role="status"
+                      aria-live="polite"
+                      className="flex min-h-[45vh] flex-col items-center justify-center gap-3 py-10 text-center"
                     >
-                      {[0, 1, 2, 3].map((idx) => (
-                        <GlassCard
-                          key={idx}
-                          variant="default"
-                          padding="none"
-                          className="magic-shimmer"
-                        >
-                          <div className="aspect-[4/3] w-full bg-stone-900/10 dark:bg-white/10" />
-                          <div className="space-y-3 p-5">
-                            <div className="h-5 w-3/4 rounded-full bg-stone-900/10 dark:bg-white/10" />
-                            <div className="h-4 w-1/2 rounded-full bg-stone-900/10 dark:bg-white/10" />
-                          </div>
-                        </GlassCard>
-                      ))}
+                      <ChefHatLoader />
+                      <p className="text-sm font-medium text-stone-600 dark:text-stone-300">
+                        Wczytujemy Wasze przepisy...
+                      </p>
                     </section>
                   ) : mainRecipes.length === 0 ? (
                     /* Stan pusty: brak jakichkolwiek przepisów */
