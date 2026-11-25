@@ -3,11 +3,12 @@ import {
   Check,
   ChefHat,
   Flame,
+  Info,
   Minus,
   Pizza,
   Plus,
 } from 'lucide-react'
-import { GlassButton, GlassCard, cn } from '../ui'
+import { GlassButton, GlassCard, GlassModal, cn } from '../ui'
 import { RecipeCard } from '../recipes/RecipeCard'
 import { RecipeGridToggle } from '../recipes/RecipeGridToggle'
 import { useRecipeGridLayout } from '../../hooks/useRecipeGridLayout'
@@ -46,10 +47,12 @@ export function PizzaCalculatorView({
   const [hydration, setHydration] = useState(preset.defaultHydration)
   const [saltPerKg, setSaltPerKg] = useState(preset.defaultSaltPerKg)
   const [oilPerKg, setOilPerKg] = useState(preset.defaultOilPerKg)
+  const [sugarPerKg, setSugarPerKg] = useState(preset.defaultSugarPerKg ?? 0)
   const [totalHours, setTotalHours] = useState(preset.defaultTotalHours)
   const [fridgeHours, setFridgeHours] = useState(preset.defaultFridgeHours)
   const [roomTemp, setRoomTemp] = useState(preset.defaultRoomTemp)
-  const [yeastType, setYeastType] = useState<'fresh' | 'dry'>('fresh')
+  const [yeastType, setYeastType] = useState<'fresh' | 'dry'>(preset.defaultYeastType ?? 'fresh')
+  const [infoModalStyleId, setInfoModalStyleId] = useState<PizzaStyleId | null>(null)
 
   // Stan zapisu przepisu
   const [isSaving, setIsSaving] = useState(false)
@@ -64,13 +67,15 @@ export function PizzaCalculatorView({
     setHydration(nextPreset.defaultHydration)
     setSaltPerKg(nextPreset.defaultSaltPerKg)
     setOilPerKg(nextPreset.defaultOilPerKg)
+    setSugarPerKg(nextPreset.defaultSugarPerKg ?? 0)
     setTotalHours(nextPreset.defaultTotalHours)
     setFridgeHours(nextPreset.defaultFridgeHours)
     setRoomTemp(nextPreset.defaultRoomTemp)
+    setYeastType(nextPreset.defaultYeastType ?? 'fresh')
     setSaveSuccess(false)
   }
 
-  // Obliczenia na żywo (Baker's Math wg KMP)
+  // Obliczenia na żywo (Baker's Math)
   const results = useMemo(() => {
     return calculatePizzaRecipe({
       balls,
@@ -78,11 +83,12 @@ export function PizzaCalculatorView({
       hydration,
       saltPerKg,
       oilPerKg,
+      sugarPerKg,
       totalHours,
       fridgeHours,
       roomTemp,
     })
-  }, [balls, ballWeight, hydration, saltPerKg, oilPerKg, totalHours, fridgeHours, roomTemp])
+  }, [balls, ballWeight, hydration, saltPerKg, oilPerKg, sugarPerKg, totalHours, fridgeHours, roomTemp])
 
   // Zapisanie wyliczonego przepisu do bazy Supabase
   const handleSaveToRecipes = async () => {
@@ -109,6 +115,15 @@ export function PizzaCalculatorView({
           amount: results.oilGrams,
           unit: 'g',
           category: 'Mokre',
+        })
+      }
+
+      if (results.sugarGrams > 0) {
+        ingredients.push({
+          name: 'Cukier',
+          amount: results.sugarGrams,
+          unit: 'g',
+          category: 'Suche',
         })
       }
 
@@ -299,41 +314,45 @@ export function PizzaCalculatorView({
       ) : (
         /* WIDOK: KALKULATOR PIZZY */
         <>
-          {/* 1. Kafelki wyboru stylu pizzy */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* 1. Kompaktowe paski wyboru stylu pizzy (tylko nazwa + małe "i") */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {(Object.keys(PIZZA_PRESETS) as PizzaStyleId[]).map((id) => {
               const item = PIZZA_PRESETS[id]
               const isSelected = selectedStyle === id
 
               return (
-                <button
+                <div
                   key={id}
-                  type="button"
-                  onClick={() => handleSelectStyle(id)}
                   className={cn(
-                    'flex flex-col text-left p-3.5 rounded-2xl border transition-all duration-200 cursor-pointer',
+                    'flex items-center justify-between gap-1 rounded-2xl border px-3 py-2 transition-all duration-200',
                     isSelected
-                      ? 'border-amber-500/60 bg-amber-500/10 shadow-lg shadow-amber-500/10 dark:border-amber-400/50 dark:bg-amber-500/15'
-                      : 'border-stone-900/10 bg-white/40 hover:bg-white/70 dark:border-white/10 dark:bg-stone-900/40 dark:hover:bg-stone-900/70',
+                      ? 'border-amber-500/60 bg-amber-500/12 shadow-sm shadow-amber-500/10 dark:border-amber-400/50 dark:bg-amber-500/18'
+                      : 'border-stone-900/10 bg-white/45 hover:bg-white/75 dark:border-white/10 dark:bg-stone-900/45 dark:hover:bg-stone-900/75',
                   )}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-bold text-stone-900 dark:text-stone-50">
-                      {item.shortName}
-                    </span>
-                    {isSelected && (
-                      <span className="flex size-5 items-center justify-center rounded-full bg-amber-600 text-white dark:bg-amber-500 dark:text-stone-950">
-                        <Check className="size-3 stroke-[3]" />
-                      </span>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectStyle(id)}
+                    aria-pressed={isSelected}
+                    className="min-w-0 flex-1 cursor-pointer text-left text-xs sm:text-sm font-bold text-stone-900 dark:text-stone-50 truncate py-0.5"
+                  >
+                    {item.shortName}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setInfoModalStyleId(id)}
+                    aria-label={`Opis i procedura wypieku: ${item.shortName}`}
+                    className={cn(
+                      'inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors',
+                      isSelected
+                        ? 'text-amber-700 hover:bg-amber-500/20 dark:text-amber-300'
+                        : 'text-stone-400 hover:bg-stone-900/10 hover:text-stone-700 dark:text-stone-400 dark:hover:bg-white/10 dark:hover:text-stone-200',
                     )}
-                  </div>
-                  <p className="text-xs text-amber-700 dark:text-amber-300 font-medium mt-0.5">
-                    {item.subtitle}
-                  </p>
-                  <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-1.5 leading-snug line-clamp-2">
-                    {item.description}
-                  </p>
-                </button>
+                  >
+                    <Info className="size-3.5" aria-hidden="true" />
+                  </button>
+                </div>
               )
             })}
           </div>
@@ -677,7 +696,7 @@ export function PizzaCalculatorView({
 
               {/* Oliwa (ukryta dla Napoletany) */}
               {selectedStyle !== 'napoletana' && (
-                <div className="flex flex-col p-3 rounded-2xl bg-white/60 dark:bg-stone-800/60 border border-stone-200/50 dark:border-white/10 col-span-2 sm:col-span-1">
+                <div className="flex flex-col p-3 rounded-2xl bg-white/60 dark:bg-stone-800/60 border border-stone-200/50 dark:border-white/10">
                   <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">🫒 Oliwa</span>
                   <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1 tabular-nums">
                     {results.oilGrams} g
@@ -687,14 +706,17 @@ export function PizzaCalculatorView({
                   </span>
                 </div>
               )}
-            </div>
 
-            {/* Wskazówka wypiekowa dla wybranego stylu */}
-            <div className="mt-4 rounded-xl bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200 leading-relaxed flex items-start gap-2">
-              <Flame className="size-4 shrink-0 text-amber-600 mt-0.5" />
-              <div>
-                <strong>Wypiek:</strong> {preset.bakingTempNote}. {preset.description}
-              </div>
+              {/* Cukier (np. dla New York Style / Pizza w 2h) */}
+              {results.sugarGrams > 0 && (
+                <div className="flex flex-col p-3 rounded-2xl bg-white/60 dark:bg-stone-800/60 border border-stone-200/50 dark:border-white/10">
+                  <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">🍬 Cukier</span>
+                  <span className="text-2xl font-black text-amber-600 dark:text-amber-400 mt-1 tabular-nums">
+                    {results.sugarGrams} g
+                  </span>
+                  <span className="text-[11px] text-stone-500">({sugarPerKg}g/kg mąki)</span>
+                </div>
+              )}
             </div>
 
             {/* Przycisk zapisu przepisu pod składnikami */}
@@ -730,6 +752,33 @@ export function PizzaCalculatorView({
           </GlassCard>
         </>
       )}
+
+      {/* Modal opisu i procedury wypieku po kliknięciu "i" */}
+      <GlassModal
+        isOpen={infoModalStyleId !== null}
+        onClose={() => setInfoModalStyleId(null)}
+        title={infoModalStyleId ? PIZZA_PRESETS[infoModalStyleId].name : ''}
+        subtitle={infoModalStyleId ? PIZZA_PRESETS[infoModalStyleId].subtitle : ''}
+        size="sm"
+      >
+        {infoModalStyleId && (
+          <div className="space-y-4 text-sm text-stone-700 dark:text-stone-200 leading-relaxed">
+            <p>{PIZZA_PRESETS[infoModalStyleId].description}</p>
+            <div className="rounded-2xl bg-amber-500/10 border border-amber-500/20 p-3.5 space-y-2">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                <Flame className="size-4 shrink-0" aria-hidden="true" />
+                <span>Procedura i wypiek</span>
+              </div>
+              <p className="text-xs font-semibold text-amber-900 dark:text-amber-200">
+                {PIZZA_PRESETS[infoModalStyleId].bakingTempNote}
+              </p>
+              <p className="text-xs text-stone-700 dark:text-stone-300">
+                {PIZZA_PRESETS[infoModalStyleId].bakingProcedure}
+              </p>
+            </div>
+          </div>
+        )}
+      </GlassModal>
     </div>
   )
 }
