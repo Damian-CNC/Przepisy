@@ -334,9 +334,9 @@ export function TinctureCalculatorView({
                     type="button"
                     variant="secondary"
                     size="sm"
-                    aria-label="Odejmij 0.5 kg"
-                    disabled={fruitKg <= 0.5}
-                    onClick={() => setFruitKg((prev) => Math.max(0.5, Math.round((prev - 0.5) * 10) / 10))}
+                    aria-label="Odejmij 100 g"
+                    disabled={fruitKg <= 0.1}
+                    onClick={() => setFruitKg((prev) => Math.max(0.1, Math.round((prev - 0.1) * 10) / 10))}
                     className="size-9 px-0 shrink-0"
                   >
                     <Minus className="size-3.5" />
@@ -344,8 +344,8 @@ export function TinctureCalculatorView({
                   <input
                     id="tincture-fruit-kg"
                     type="range"
-                    min={0.5}
-                    max={10.0}
+                    min={0.1}
+                    max={3.0}
                     step={0.1}
                     value={fruitKg}
                     onChange={(e) => setFruitKg(Number(e.target.value))}
@@ -355,17 +355,18 @@ export function TinctureCalculatorView({
                     type="button"
                     variant="secondary"
                     size="sm"
-                    aria-label="Dodaj 0.5 kg"
-                    onClick={() => setFruitKg((prev) => Math.min(10, Math.round((prev + 0.5) * 10) / 10))}
+                    aria-label="Dodaj 100 g"
+                    disabled={fruitKg >= 3.0}
+                    onClick={() => setFruitKg((prev) => Math.min(3.0, Math.round((prev + 0.1) * 10) / 10))}
                     className="size-9 px-0 shrink-0"
                   >
                     <Plus className="size-3.5" />
                   </GlassButton>
                 </div>
                 <div className="flex justify-between text-[10px] text-stone-500">
-                  <span>0.5 kg</span>
-                  <span>5.0 kg</span>
-                  <span>10 kg</span>
+                  <span>100 g</span>
+                  <span>1.5 kg</span>
+                  <span>3 kg</span>
                 </div>
               </div>
 
