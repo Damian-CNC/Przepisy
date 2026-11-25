@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { GlassButton, GlassCard, cn } from '../ui'
 import { RecipeCard } from '../recipes/RecipeCard'
+import { isPizzaRecipe } from '../recipes/recipeMeta'
 import type { RecipeInsert, RecipeRow } from '../../lib/supabase'
 import type { PizzaStyleId } from './pizzaPresets'
 import { PIZZA_PRESETS } from './pizzaPresets'
@@ -34,26 +35,7 @@ export function PizzaCalculatorView({
   const preset = PIZZA_PRESETS[selectedStyle]
 
   // Przepisy powiązane z pizzą
-  const pizzaRecipes = useMemo(() => {
-    return recipes.filter((r) => {
-      const category = (r.category ?? '').toLowerCase()
-      const title = (r.title ?? '').toLowerCase()
-      const tags = Array.isArray(r.tags) ? r.tags.map((t) => (t ?? '').toLowerCase()) : []
-      return (
-        category === 'pizza' ||
-        category === 'pizze' ||
-        tags.includes('pizza') ||
-        tags.some(
-          (t) =>
-            t.includes('pizza') ||
-            t.includes('napoletana') ||
-            t.includes('rzymska') ||
-            t.includes('canotto'),
-        ) ||
-        title.includes('pizza')
-      )
-    })
-  }, [recipes])
+  const pizzaRecipes = useMemo(() => recipes.filter(isPizzaRecipe), [recipes])
 
   // Parametry wejściowe kalkulatora
   const [balls, setBalls] = useState(preset.defaultBalls)

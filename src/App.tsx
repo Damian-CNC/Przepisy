@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
-import { AnimatePresence, MotionConfig, motion } from 'framer-motion'
+import { MotionConfig } from 'framer-motion'
 import {
   AlertCircle,
   ChefHat,
@@ -15,7 +15,11 @@ import {
 import { AuthScreen } from './components/auth/AuthScreen'
 import { RecipeCard } from './components/recipes/RecipeCard'
 import { RecipeDetailView } from './components/recipes/RecipeDetailView'
-import { RECIPE_CATEGORIES } from './components/recipes/recipeMeta'
+import {
+  RECIPE_CATEGORIES,
+  isPizzaRecipe,
+  isTinctureRecipe,
+} from './components/recipes/recipeMeta'
 import { SmartImportModal } from './components/recipes/SmartImportModal'
 import { SettingsModal } from './components/settings/SettingsModal'
 import { BottomTabBar, type NavigationTab } from './components/navigation/BottomTabBar'
@@ -71,6 +75,66 @@ interface ActiveShareImportState {
 export function App() {
   // Globalna blokada wygaszania ekranu w całej aplikacji
   useWakeLock(true)
+
+  // Blokada przeciągania aplikacji góra/dół poza ramy (rubber-band / pull-to-refresh na iOS i Android)
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return
+
+    let startX = 0
+    let startY = 0
+
+    const isInScrollableContainer = (target: EventTarget | null, deltaY: number): boolean => {
+      let el = target instanceof HTMLElement ? target : null
+      while (el && el !== document.body && el !== document.documentElement) {
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') {
+          return true
+        }
+        const style = window.getComputedStyle(el)
+        const overflowY = style.overflowY
+        if ((overflowY === 'auto' || overflowY === 'scroll') && el.scrollHeight > el.clientHeight) {
+          const canScrollUp = el.scrollTop > 0
+          const canScrollDown = el.scrollTop + el.clientHeight < el.scrollHeight - 1
+          if ((deltaY > 0 && canScrollUp) || (deltaY < 0 && canScrollDown)) {
+            return true
+          }
+        }
+        el = el.parentElement
+      }
+      return false
+    }
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        startX = e.touches[0].clientX
+        startY = e.touches[0].clientY
+      }
+    }
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return
+      const deltaX = e.touches[0].clientX - startX
+      const deltaY = e.touches[0].clientY - startY
+
+      if (Math.abs(deltaY) <= Math.abs(deltaX) || Math.abs(deltaY) <= 2) return
+      if (isInScrollableContainer(e.target, deltaY)) return
+
+      const atTop = window.scrollY <= 0
+      const atBottom =
+        window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 1
+
+      if ((atTop && deltaY > 0) || (atBottom && deltaY < 0)) {
+        e.preventDefault()
+      }
+    }
+
+    document.addEventListener('touchstart', handleTouchStart, { passive: true })
+    document.addEventListener('touchmove', handleTouchMove, { passive: false })
+
+    return () => {
+      document.removeEventListener('touchstart', handleTouchStart)
+      document.removeEventListener('touchmove', handleTouchMove)
+    }
+  }, [])
 
   const {
     user,
@@ -245,10 +309,16 @@ export function App() {
     [cookingSession, recipes],
   )
 
+  // Przepisy główne (bez pizzy i nalewek, które mają własne zakładki)
+  const mainRecipes = useMemo(
+    () => recipes.filter((recipe) => !isPizzaRecipe(recipe) && !isTinctureRecipe(recipe)),
+    [recipes],
+  )
+
   const filteredRecipes = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
 
-    return recipes.filter((recipe) => {
+    return mainRecipes.filter((recipe) => {
       if (selectedFilter === 'Ulubione' && !recipe.is_favorite) {
         return false
       }
@@ -274,7 +344,7 @@ export function App() {
 
       return inTitle || inDescription || inCategory || inTags || inIngredients
     })
-  }, [recipes, searchQuery, selectedFilter])
+  }, [mainRecipes, searchQuery, selectedFilter])
 
   const handleSignOut = async () => {
     if (isSigningOut) return
@@ -468,62 +538,56 @@ export function App() {
                 }
               />
             ) : (
-              <AnimatePresence mode="wait" initial={false}>
-                {activeTab === 'pizza' ? (
-                  <motion.div
-                    key="pizza-tab"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.16, ease: 'easeOut' }}
-                    className="pb-28 pt-[calc(env(safe-area-inset-top,0px)+1rem)]"
-                  >
-                    <PizzaCalculatorView
-                      recipes={recipes}
-                      onSelectRecipe={handleSelectRecipe}
-                      onToggleFavorite={toggleFavorite}
-                      onSaveRecipe={async (payload) => {
-                        const created = await addRecipe(payload)
-                        return created
-                      }}
-                      onNavigateToRecipes={() => {
-                        setActiveTab('recipes')
-                        setSelectedRecipeId(null)
-                      }}
-                    />
-                  </motion.div>
-                ) : activeTab === 'tinctures' ? (
-                  <motion.div
-                    key="tinctures-tab"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.16, ease: 'easeOut' }}
-                    className="pb-28 pt-[calc(env(safe-area-inset-top,0px)+1rem)]"
-                  >
-                    <TinctureCalculatorView
-                      recipes={recipes}
-                      onSelectRecipe={handleSelectRecipe}
-                      onToggleFavorite={toggleFavorite}
-                      onSaveRecipe={async (payload) => {
-                        const created = await addRecipe(payload)
-                        return created
-                      }}
-                      onNavigateToRecipes={() => {
-                        setActiveTab('recipes')
-                        setSelectedRecipeId(null)
-                      }}
-                    />
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="recipes-tab"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.16, ease: 'easeOut' }}
-                    className="pb-28"
-                  >
+              <>
+                <div
+                  className={cn(
+                    activeTab === 'pizza'
+                      ? 'tab-view-enter pb-28 pt-[calc(env(safe-area-inset-top,0px)+1rem)]'
+                      : 'hidden',
+                  )}
+                >
+                  <PizzaCalculatorView
+                    recipes={recipes}
+                    onSelectRecipe={handleSelectRecipe}
+                    onToggleFavorite={toggleFavorite}
+                    onSaveRecipe={async (payload) => {
+                      const created = await addRecipe(payload)
+                      return created
+                    }}
+                    onNavigateToRecipes={() => {
+                      setActiveTab('recipes')
+                      setSelectedRecipeId(null)
+                    }}
+                  />
+                </div>
+
+                <div
+                  className={cn(
+                    activeTab === 'tinctures'
+                      ? 'tab-view-enter pb-28 pt-[calc(env(safe-area-inset-top,0px)+1rem)]'
+                      : 'hidden',
+                  )}
+                >
+                  <TinctureCalculatorView
+                    recipes={recipes}
+                    onSelectRecipe={handleSelectRecipe}
+                    onToggleFavorite={toggleFavorite}
+                    onSaveRecipe={async (payload) => {
+                      const created = await addRecipe(payload)
+                      return created
+                    }}
+                    onNavigateToRecipes={() => {
+                      setActiveTab('recipes')
+                      setSelectedRecipeId(null)
+                    }}
+                  />
+                </div>
+
+                <div
+                  className={cn(
+                    activeTab === 'recipes' ? 'tab-view-enter pb-28' : 'hidden',
+                  )}
+                >
                 <header className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pt-[calc(env(safe-area-inset-top,0px)+1.5rem)] sm:gap-5 sm:px-6">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
@@ -539,10 +603,10 @@ export function App() {
                           }
                         >
                           <span className="tabular-nums">
-                            {recipes.length}{' '}
-                            {recipes.length === 1
+                            {mainRecipes.length}{' '}
+                            {mainRecipes.length === 1
                               ? 'przepis'
-                              : recipes.length >= 2 && recipes.length <= 4
+                              : mainRecipes.length >= 2 && mainRecipes.length <= 4
                                 ? 'przepisy'
                                 : 'przepisów'}
                           </span>
@@ -748,7 +812,7 @@ export function App() {
                         </GlassCard>
                       ))}
                     </section>
-                  ) : recipes.length === 0 ? (
+                  ) : mainRecipes.length === 0 ? (
                     /* Stan pusty: brak jakichkolwiek przepisów */
                     <GlassCard variant="elevated" padding="lg" className="text-center">
                       <div className="mx-auto flex max-w-md flex-col items-center gap-4 py-6">
@@ -816,10 +880,9 @@ export function App() {
                     </section>
                   )}
                 </main>
-              </motion.div>
+                </div>
+              </>
             )}
-          </AnimatePresence>
-        )}
 
             {/* Modal Smart Importer */}
             <SmartImportModal

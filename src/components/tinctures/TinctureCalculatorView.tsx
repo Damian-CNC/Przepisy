@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { GlassButton, GlassCard, cn } from '../ui'
 import { RecipeCard } from '../recipes/RecipeCard'
+import { isTinctureRecipe } from '../recipes/recipeMeta'
 import type { RecipeInsert, RecipeRow } from '../../lib/supabase'
 import type { AlcoholTypeId, TinctureFruitId } from './tincturePresets'
 import { TINCTURE_ALCOHOL_TYPES, TINCTURE_PRESETS } from './tincturePresets'
@@ -43,28 +44,7 @@ export function TinctureCalculatorView({
   const preset = TINCTURE_PRESETS[selectedFruit]
 
   // Przepisy powiązane z nalewkami
-  const tinctureRecipes = useMemo(() => {
-    return recipes.filter((r) => {
-      const category = (r.category ?? '').toLowerCase()
-      const title = (r.title ?? '').toLowerCase()
-      const tags = Array.isArray(r.tags) ? r.tags.map((t) => (t ?? '').toLowerCase()) : []
-      return (
-        category === 'nalewka' ||
-        category === 'nalewki' ||
-        (category === 'napój' && (tags.includes('nalewka') || title.includes('nalewk') || title.includes('ówka'))) ||
-        tags.includes('nalewka') ||
-        tags.some(
-          (t) =>
-            t.includes('nalewk') ||
-            t.includes('malinówka') ||
-            t.includes('cytrynówka') ||
-            t.includes('wiśniówka'),
-        ) ||
-        title.includes('nalewk') ||
-        title.includes('ówka')
-      )
-    })
-  }, [recipes])
+  const tinctureRecipes = useMemo(() => recipes.filter(isTinctureRecipe), [recipes])
 
   // Profile cukru załadowane z pamięci telefonu
   const [sugarProfiles, setSugarProfiles] = useState<TinctureSugarProfiles>(() =>

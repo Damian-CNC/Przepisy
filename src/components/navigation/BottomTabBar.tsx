@@ -1,5 +1,4 @@
 import { ChefHat, Pizza, Wine } from 'lucide-react'
-import { motion } from 'framer-motion'
 import { cn } from '../ui'
 
 export type NavigationTab = 'recipes' | 'pizza' | 'tinctures'
@@ -37,18 +36,20 @@ const TABS: TabItem[] = [
 export function BottomTabBar({ activeTab, onSelectTab, hidden = false }: BottomTabBarProps) {
   if (hidden) return null
 
+  const activeIndex = Math.max(
+    0,
+    TABS.findIndex((t) => t.id === activeTab),
+  )
+
   return (
     <div
       aria-label="Dolny pasek nawigacyjny"
-      className={cn(
-        'fixed inset-x-0 bottom-3 z-40 flex justify-center px-4 pointer-events-none sm:bottom-4',
-        'transition-transform duration-300 motion-reduce:transition-none',
-      )}
+      className="fixed inset-x-0 bottom-3 z-40 flex justify-center px-4 pointer-events-none sm:bottom-4"
     >
       <nav
         aria-label="Główne zakładki aplikacji"
         className={cn(
-          'pointer-events-auto relative flex w-full max-w-sm items-center justify-between gap-1 p-1.5',
+          'pointer-events-auto relative grid w-full max-w-sm grid-cols-3 items-center p-1.5',
           'rounded-full',
           // Apple Liquid Glass
           'bg-white/75 dark:bg-stone-900/80',
@@ -58,6 +59,22 @@ export function BottomTabBar({ activeTab, onSelectTab, hidden = false }: BottomT
           'dark:shadow-[0_16px_48px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.12)]',
         )}
       >
+        {/* Płynny wskaźnik aktywnej zakładki na GPU (translate3d bez przeliczania layoutu) */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-1.5 left-1.5 w-[calc((100%-0.75rem)/3)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform motion-reduce:transition-none"
+          style={{ transform: `translate3d(${activeIndex * 100}%, 0, 0)` }}
+        >
+          <div
+            className={cn(
+              'size-full rounded-full',
+              'bg-gradient-to-b from-amber-500/20 to-amber-600/15 dark:from-amber-400/25 dark:to-amber-500/20',
+              'border border-amber-500/30 dark:border-amber-400/30',
+              'shadow-[0_2px_8px_rgba(245,158,11,0.2)]',
+            )}
+          />
+        </div>
+
         {TABS.map((tab) => {
           const Icon = tab.icon
           const isActive = activeTab === tab.id
@@ -69,38 +86,25 @@ export function BottomTabBar({ activeTab, onSelectTab, hidden = false }: BottomT
               onClick={() => onSelectTab(tab.id)}
               aria-current={isActive ? 'page' : undefined}
               className={cn(
-                'group relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-full py-1.5 px-2.5',
+                'group relative z-10 flex flex-col items-center justify-center gap-0.5 rounded-full py-1.5 px-2.5',
                 'cursor-pointer select-none transition-colors duration-200 outline-none',
                 isActive
                   ? 'text-amber-700 dark:text-amber-300'
                   : 'text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200',
               )}
             >
-              {/* Animowana kapsuła tła aktywnej zakładki (Liquid Glass Pill) */}
-              {isActive && (
-                <motion.div
-                  layoutId="activeBottomTabPill"
-                  className={cn(
-                    'absolute inset-0 rounded-full',
-                    'bg-gradient-to-b from-amber-500/20 to-amber-600/15 dark:from-amber-400/25 dark:to-amber-500/20',
-                    'border border-amber-500/30 dark:border-amber-400/30',
-                    'shadow-[0_2px_8px_rgba(245,158,11,0.2)]',
-                  )}
-                  transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                />
-              )}
-
-              {/* Ikona z subtelną sprężystą skalą */}
-              <motion.div
-                animate={{ scale: isActive ? 1.08 : 1 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                className="relative flex size-6 items-center justify-center"
+              {/* Ikona z płynną skalą */}
+              <div
+                className={cn(
+                  'relative flex size-6 items-center justify-center transition-transform duration-200 ease-out will-change-transform',
+                  isActive ? 'scale-110' : 'scale-100 group-hover:scale-105',
+                )}
               >
                 <Icon
                   className="size-5 shrink-0"
                   strokeWidth={isActive ? 2.4 : 1.8}
                 />
-              </motion.div>
+              </div>
 
               {/* Etykieta */}
               <span
