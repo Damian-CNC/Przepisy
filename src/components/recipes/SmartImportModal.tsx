@@ -729,20 +729,20 @@ export function SmartImportModal({
         {isAnalyzing ? (
           <GlassCard variant="elevated" padding="lg" className="magic-shimmer">
             <div role="status" aria-live="polite" className="flex flex-col items-center gap-4 py-6 text-center">
-              <div className="inline-flex size-20 items-center justify-center rounded-3xl border border-amber-500/30 bg-amber-500/12 text-amber-700 shadow-inner dark:border-amber-400/30 dark:bg-amber-500/15 dark:text-amber-300">
+              <div className="flex items-center justify-center text-amber-700 dark:text-amber-300">
                 <svg
                   viewBox="0 0 100 100"
                   fill="none"
                   xmlns="http://www.w3.org/2000/svg"
                   aria-hidden="true"
-                  className="size-13"
+                  className="size-28 sm:size-32"
                 >
                   {/* Subtelny ślad linii czapki */}
                   <path
                     d="M 28 72 L 25 55 C 12 53, 11 31, 28 30 C 33 14, 67 14, 72 30 C 89 31, 88 53, 75 55 L 72 79 Q 50 72, 32 77"
                     stroke="currentColor"
                     strokeOpacity="0.14"
-                    strokeWidth="4.5"
+                    strokeWidth="4"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                   />
@@ -751,7 +751,7 @@ export function SmartImportModal({
                     d="M 28 72 L 25 55 C 12 53, 11 31, 28 30 C 33 14, 67 14, 72 30 C 89 31, 88 53, 75 55 L 72 79 Q 50 72, 32 77"
                     pathLength="100"
                     stroke="currentColor"
-                    strokeWidth="4.5"
+                    strokeWidth="4"
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     className="chef-hat-draw"
