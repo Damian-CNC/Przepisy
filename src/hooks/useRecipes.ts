@@ -90,32 +90,77 @@ function toPolishErrorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message.trim() ? err.message : fallback
 }
 
+const RECIPES_CACHE_KEY = 'nasze-przepisy-recipes-cache-v1'
+
+function readCachedRecipes(): RecipeRow[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(RECIPES_CACHE_KEY)
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return sortRecipesByNewest((parsed as RecipeRow[]).map(sanitizeRecipeRow))
+  } catch {
+    return []
+  }
+}
+
+function writeCachedRecipes(items: RecipeRow[]): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(RECIPES_CACHE_KEY, JSON.stringify(items))
+  } catch {
+    // Ignoruj błędy przepełnienia localStorage / trybu prywatnego
+  }
+}
+
+function clearCachedRecipes(): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.removeItem(RECIPES_CACHE_KEY)
+  } catch {
+    // Ignoruj błędy dostępu do localStorage
+  }
+}
+
 /**
  * Pobiera przepisy z Supabase, synchronizuje zmiany na żywo przez Supabase Realtime
- * i udostępnia operacje CRUD z optymistyczną aktualizacją interfejsu.
+ * i udostępnia operacje CRUD z optymistyczną aktualizacją interfejsu oraz lokalnym cachem SWR.
  */
 export function useRecipes(options: UseRecipesOptions = {}): UseRecipesResult {
   const { enabled } = options
   const configured = isSupabaseConfigured()
   const isSyncActive = configured && enabled !== false
 
-  const [recipes, setRecipes] = useState<RecipeRow[]>([])
-  const [isLoading, setIsLoading] = useState<boolean>(isSyncActive)
+  const [recipes, setRecipes] = useState<RecipeRow[]>(() =>
+    configured && enabled !== false ? readCachedRecipes() : [],
+  )
+  const [isLoading, setIsLoading] = useState<boolean>(
+    () => isSyncActive && readCachedRecipes().length === 0,
+  )
   const [error, setError] = useState<string | null>(null)
 
   const recipesRef = useRef<RecipeRow[]>(recipes)
   useEffect(() => {
     recipesRef.current = recipes
-  }, [recipes])
+    if (isSyncActive) {
+      writeCachedRecipes(recipes)
+    } else if (enabled === false) {
+      clearCachedRecipes()
+    }
+  }, [recipes, isSyncActive, enabled])
 
   const refresh = useCallback(async () => {
     if (!isSyncActive) {
       setRecipes([])
+      clearCachedRecipes()
       setIsLoading(false)
       return
     }
 
-    setIsLoading(true)
+    if (recipesRef.current.length === 0) {
+      setIsLoading(true)
+    }
     setError(null)
 
     try {
@@ -148,7 +193,9 @@ export function useRecipes(options: UseRecipesOptions = {}): UseRecipesResult {
         }
       }
 
-      setIsLoading(true)
+      if (recipesRef.current.length === 0) {
+        setIsLoading(true)
+      }
       setError(null)
 
       try {

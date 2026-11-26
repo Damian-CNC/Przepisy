@@ -12,9 +12,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react'
-import { AuthScreen } from './components/auth/AuthScreen'
 import { RecipeCard } from './components/recipes/RecipeCard'
-import { RecipeDetailView } from './components/recipes/RecipeDetailView'
 import { RecipeGridToggle } from './components/recipes/RecipeGridToggle'
 import { useRecipeGridLayout } from './hooks/useRecipeGridLayout'
 import {
@@ -22,11 +20,7 @@ import {
   isPizzaRecipe,
   isTinctureRecipe,
 } from './components/recipes/recipeMeta'
-import { SmartImportModal } from './components/recipes/SmartImportModal'
-import { SettingsModal } from './components/settings/SettingsModal'
 import { BottomTabBar, type NavigationTab } from './components/navigation/BottomTabBar'
-import { PizzaCalculatorView } from './components/pizza/PizzaCalculatorView'
-import { TinctureCalculatorView } from './components/tinctures/TinctureCalculatorView'
 import {
   AmbientBackground,
   GlassButton,
@@ -58,6 +52,42 @@ import type { RecipeRow } from './lib/supabase'
 const CookingModeView = lazy(() =>
   import('./components/cooking/CookingModeView').then((mod) => ({
     default: mod.CookingModeView,
+  })),
+)
+
+const AuthScreen = lazy(() =>
+  import('./components/auth/AuthScreen').then((mod) => ({
+    default: mod.AuthScreen,
+  })),
+)
+
+const RecipeDetailView = lazy(() =>
+  import('./components/recipes/RecipeDetailView').then((mod) => ({
+    default: mod.RecipeDetailView,
+  })),
+)
+
+const SmartImportModal = lazy(() =>
+  import('./components/recipes/SmartImportModal').then((mod) => ({
+    default: mod.SmartImportModal,
+  })),
+)
+
+const SettingsModal = lazy(() =>
+  import('./components/settings/SettingsModal').then((mod) => ({
+    default: mod.SettingsModal,
+  })),
+)
+
+const PizzaCalculatorView = lazy(() =>
+  import('./components/pizza/PizzaCalculatorView').then((mod) => ({
+    default: mod.PizzaCalculatorView,
+  })),
+)
+
+const TinctureCalculatorView = lazy(() =>
+  import('./components/tinctures/TinctureCalculatorView').then((mod) => ({
+    default: mod.TinctureCalculatorView,
   })),
 )
 
@@ -167,6 +197,19 @@ export function App() {
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null)
   const [recipeHistory, setRecipeHistory] = useState<string[]>([])
   const [activeTab, setActiveTab] = useState<NavigationTab>('recipes')
+  const [hasVisitedPizza, setHasVisitedPizza] = useState(false)
+  const [hasVisitedTinctures, setHasVisitedTinctures] = useState(false)
+
+  // Prefetch głównych podwidoków w czasie bezczynności przeglądarki
+  useEffect(() => {
+    if (!user || typeof window === 'undefined') return
+    const timer = window.setTimeout(() => {
+      void import('./components/recipes/RecipeDetailView')
+      void import('./components/pizza/PizzaCalculatorView')
+      void import('./components/tinctures/TinctureCalculatorView')
+    }, 1200)
+    return () => window.clearTimeout(timer)
+  }, [user])
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
@@ -428,13 +471,21 @@ export function App() {
             </div>
           </main>
         ) : !user ? (
-          <AuthScreen
-            authError={authError}
-            pendingShare={pendingShareNotice}
-            onSignInWithPassword={signInWithPassword}
-            onSignInWithMagicLink={signInWithMagicLink}
-            onClearError={clearAuthError}
-          />
+          <Suspense
+            fallback={
+              <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col items-center justify-center px-4">
+                <ChefHatLoader />
+              </main>
+            }
+          >
+            <AuthScreen
+              authError={authError}
+              pendingShare={pendingShareNotice}
+              onSignInWithPassword={signInWithPassword}
+              onSignInWithMagicLink={signInWithMagicLink}
+              onClearError={clearAuthError}
+            />
+          </Suspense>
         ) : (
           <>
             {/* Pływający baner wykrytego linku ze schowka (dla Skrótów iOS / Chrome) */}
@@ -522,66 +573,94 @@ export function App() {
                 />
               </Suspense>
             ) : selectedRecipe ? (
-              <RecipeDetailView
-                key={selectedRecipe.id}
-                recipe={selectedRecipe}
-                allRecipes={recipes}
-                onBack={handleBackFromRecipe}
-                onSelectRecipe={handleNavigateToLinkedRecipe}
-                hasPreviousRecipe={recipeHistory.length > 1}
-                onToggleFavorite={toggleFavorite}
-                onUpdatePhoto={updatePhoto}
-                onUpdateRecipe={updateRecipeItem}
-                onRemoveRecipe={removeRecipe}
-                onStartCooking={(recipe, targetServings) =>
-                  setCookingSession({ recipe, targetServings })
+              <Suspense
+                fallback={
+                  <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col items-center justify-center px-4">
+                    <ChefHatLoader />
+                  </main>
                 }
-              />
+              >
+                <RecipeDetailView
+                  key={selectedRecipe.id}
+                  recipe={selectedRecipe}
+                  allRecipes={recipes}
+                  onBack={handleBackFromRecipe}
+                  onSelectRecipe={handleNavigateToLinkedRecipe}
+                  hasPreviousRecipe={recipeHistory.length > 1}
+                  onToggleFavorite={toggleFavorite}
+                  onUpdatePhoto={updatePhoto}
+                  onUpdateRecipe={updateRecipeItem}
+                  onRemoveRecipe={removeRecipe}
+                  onStartCooking={(recipe, targetServings) =>
+                    setCookingSession({ recipe, targetServings })
+                  }
+                />
+              </Suspense>
             ) : (
               <>
-                <div
-                  className={cn(
-                    activeTab === 'pizza'
-                      ? 'tab-view-enter pb-28 pt-[calc(env(safe-area-inset-top,0px)+0.25rem)]'
-                      : 'hidden',
-                  )}
-                >
-                  <PizzaCalculatorView
-                    recipes={recipes}
-                    onSelectRecipe={handleSelectRecipe}
-                    onToggleFavorite={toggleFavorite}
-                    onSaveRecipe={async (payload) => {
-                      const created = await addRecipe(payload)
-                      return created
-                    }}
-                    onNavigateToRecipes={() => {
-                      setActiveTab('recipes')
-                      setSelectedRecipeId(null)
-                    }}
-                  />
-                </div>
+                {(activeTab === 'pizza' || hasVisitedPizza) && (
+                  <div
+                    className={cn(
+                      activeTab === 'pizza'
+                        ? 'tab-view-enter pb-28 pt-[calc(env(safe-area-inset-top,0px)+0.25rem)]'
+                        : 'hidden',
+                    )}
+                  >
+                    <Suspense
+                      fallback={
+                        <div className="flex min-h-[45vh] items-center justify-center">
+                          <ChefHatLoader />
+                        </div>
+                      }
+                    >
+                      <PizzaCalculatorView
+                        recipes={recipes}
+                        onSelectRecipe={handleSelectRecipe}
+                        onToggleFavorite={toggleFavorite}
+                        onSaveRecipe={async (payload) => {
+                          const created = await addRecipe(payload)
+                          return created
+                        }}
+                        onNavigateToRecipes={() => {
+                          setActiveTab('recipes')
+                          setSelectedRecipeId(null)
+                        }}
+                      />
+                    </Suspense>
+                  </div>
+                )}
 
-                <div
-                  className={cn(
-                    activeTab === 'tinctures'
-                      ? 'tab-view-enter pb-28 pt-[calc(env(safe-area-inset-top,0px)+0.25rem)]'
-                      : 'hidden',
-                  )}
-                >
-                  <TinctureCalculatorView
-                    recipes={recipes}
-                    onSelectRecipe={handleSelectRecipe}
-                    onToggleFavorite={toggleFavorite}
-                    onSaveRecipe={async (payload) => {
-                      const created = await addRecipe(payload)
-                      return created
-                    }}
-                    onNavigateToRecipes={() => {
-                      setActiveTab('recipes')
-                      setSelectedRecipeId(null)
-                    }}
-                  />
-                </div>
+                {(activeTab === 'tinctures' || hasVisitedTinctures) && (
+                  <div
+                    className={cn(
+                      activeTab === 'tinctures'
+                        ? 'tab-view-enter pb-28 pt-[calc(env(safe-area-inset-top,0px)+0.25rem)]'
+                        : 'hidden',
+                    )}
+                  >
+                    <Suspense
+                      fallback={
+                        <div className="flex min-h-[45vh] items-center justify-center">
+                          <ChefHatLoader />
+                        </div>
+                      }
+                    >
+                      <TinctureCalculatorView
+                        recipes={recipes}
+                        onSelectRecipe={handleSelectRecipe}
+                        onToggleFavorite={toggleFavorite}
+                        onSaveRecipe={async (payload) => {
+                          const created = await addRecipe(payload)
+                          return created
+                        }}
+                        onNavigateToRecipes={() => {
+                          setActiveTab('recipes')
+                          setSelectedRecipeId(null)
+                        }}
+                      />
+                    </Suspense>
+                  </div>
+                )}
 
                 <div
                   className={cn(
@@ -883,38 +962,48 @@ export function App() {
             )}
 
             {/* Modal Smart Importer */}
-            <SmartImportModal
-              isOpen={isImportModalOpen}
-              onClose={() => {
-                setIsImportModalOpen(false)
-                setActiveShareImport(null)
-              }}
-              initialUrl={activeShareImport?.url ?? ''}
-              initialRawText={activeShareImport?.rawText ?? ''}
-              autoAnalyze={activeShareImport?.autoAnalyze ?? false}
-              onAutoAnalyzeConsumed={() =>
-                setActiveShareImport((prev) => (prev ? { ...prev, autoAnalyze: false } : prev))
-              }
-              onSaveRecipe={async (payload) => {
-                const created = await addRecipe(payload)
-                handleSelectRecipe(created.id)
-                return created
-              }}
-            />
+            {isImportModalOpen && (
+              <Suspense fallback={null}>
+                <SmartImportModal
+                  isOpen={isImportModalOpen}
+                  onClose={() => {
+                    setIsImportModalOpen(false)
+                    setActiveShareImport(null)
+                  }}
+                  initialUrl={activeShareImport?.url ?? ''}
+                  initialRawText={activeShareImport?.rawText ?? ''}
+                  autoAnalyze={activeShareImport?.autoAnalyze ?? false}
+                  onAutoAnalyzeConsumed={() =>
+                    setActiveShareImport((prev) => (prev ? { ...prev, autoAnalyze: false } : prev))
+                  }
+                  onSaveRecipe={async (payload) => {
+                    const created = await addRecipe(payload)
+                    handleSelectRecipe(created.id)
+                    return created
+                  }}
+                />
+              </Suspense>
+            )}
 
             {/* Modal Ustawień (Konto domownika, Wylogowanie i Skrót iOS) */}
-            <SettingsModal
-              isOpen={isSettingsModalOpen}
-              onClose={() => setIsSettingsModalOpen(false)}
-              userEmail={user.email}
-              isSigningOut={isSigningOut}
-              onSignOut={handleSignOut}
-            />
+            {isSettingsModalOpen && (
+              <Suspense fallback={null}>
+                <SettingsModal
+                  isOpen={isSettingsModalOpen}
+                  onClose={() => setIsSettingsModalOpen(false)}
+                  userEmail={user.email}
+                  isSigningOut={isSigningOut}
+                  onSignOut={handleSignOut}
+                />
+              </Suspense>
+            )}
 
             {/* Dolny pasek nawigacyjny w stylu iOS (3 zakładki) */}
             <BottomTabBar
               activeTab={activeTab}
               onSelectTab={(tab) => {
+                if (tab === 'pizza') setHasVisitedPizza(true)
+                if (tab === 'tinctures') setHasVisitedTinctures(true)
                 setActiveTab(tab)
                 if (tab !== 'recipes' || selectedRecipeId !== null) {
                   setSelectedRecipeId(null)
