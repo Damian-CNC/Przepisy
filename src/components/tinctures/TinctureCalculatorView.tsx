@@ -333,7 +333,7 @@ export function TinctureCalculatorView({
                 <div className="flex justify-between text-xs font-medium">
                   <label htmlFor="tincture-fruit-kg" className="text-stone-600 dark:text-stone-300">Waga owoców</label>
                   <span className="font-bold text-rose-700 dark:text-rose-300 tabular-nums">
-                    {fruitKg.toFixed(1)} kg ({results.fruitGrams} g)
+                    {fruitKg.toFixed(2)} kg ({results.fruitGrams} g)
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -341,9 +341,9 @@ export function TinctureCalculatorView({
                     type="button"
                     variant="secondary"
                     size="sm"
-                    aria-label="Odejmij 100 g"
+                    aria-label="Odejmij 50 g"
                     disabled={fruitKg <= 0.1}
-                    onClick={() => setFruitKg((prev) => Math.max(0.1, Math.round((prev - 0.1) * 10) / 10))}
+                    onClick={() => setFruitKg((prev) => Math.max(0.1, Math.round((prev - 0.05) * 100) / 100))}
                     className="size-9 px-0 shrink-0"
                   >
                     <Minus className="size-3.5" />
@@ -353,7 +353,7 @@ export function TinctureCalculatorView({
                     type="range"
                     min={0.1}
                     max={3.0}
-                    step={0.1}
+                    step={0.05}
                     value={fruitKg}
                     onChange={(e) => setFruitKg(Number(e.target.value))}
                     className="w-full accent-rose-500 cursor-pointer"
@@ -362,9 +362,9 @@ export function TinctureCalculatorView({
                     type="button"
                     variant="secondary"
                     size="sm"
-                    aria-label="Dodaj 100 g"
+                    aria-label="Dodaj 50 g"
                     disabled={fruitKg >= 3.0}
-                    onClick={() => setFruitKg((prev) => Math.min(3.0, Math.round((prev + 0.1) * 10) / 10))}
+                    onClick={() => setFruitKg((prev) => Math.min(3.0, Math.round((prev + 0.05) * 100) / 100))}
                     className="size-9 px-0 shrink-0"
                   >
                     <Plus className="size-3.5" />
