@@ -15,26 +15,25 @@ export interface GlassCardProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
 }
 
 const VARIANT_CLASSES: Record<GlassCardVariant, string> = {
+  // Warstwa treści (bez ciężkiego bluru, zgodnie z HIG — wysoka czytelność i płynne przewijanie list)
   default: cn(
-    'backdrop-blur-2xl backdrop-saturate-150',
-    'bg-white/65 dark:bg-zinc-900/55',
-    'border border-white/40 dark:border-white/15',
-    'shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.6),0_8px_32px_0_rgba(0,0,0,0.08)]',
-    'dark:shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.12),0_12px_40px_0_rgba(0,0,0,0.45)]',
+    'bg-white/90 dark:bg-zinc-900/86',
+    'border border-stone-900/8 dark:border-white/12',
+    'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.65),0_6px_22px_0_rgba(28,25,23,0.06)]',
+    'dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08),0_10px_28px_0_rgba(0,0,0,0.4)]',
   ),
   elevated: cn(
-    'backdrop-blur-2xl backdrop-saturate-150',
-    'bg-white/78 dark:bg-zinc-900/72',
-    'border border-white/50 dark:border-white/20',
-    'shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.72),0_16px_44px_0_rgba(28,25,23,0.12)]',
-    'dark:shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.16),0_20px_52px_0_rgba(0,0,0,0.55)]',
+    'backdrop-blur-md backdrop-saturate-150',
+    'bg-white/85 dark:bg-zinc-900/80',
+    'border border-white/60 dark:border-white/16',
+    'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.75),inset_0_-1px_0_0_rgba(255,255,255,0.14),0_14px_38px_0_rgba(28,25,23,0.1)]',
+    'dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.16),0_18px_46px_0_rgba(0,0,0,0.5)]',
   ),
   interactive: cn(
-    'backdrop-blur-2xl backdrop-saturate-150',
-    'bg-white/65 hover:bg-white/75 dark:bg-zinc-900/55 dark:hover:bg-zinc-900/70',
-    'border border-white/40 hover:border-white/60 dark:border-white/15 dark:hover:border-white/25',
-    'shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.6),0_8px_32px_0_rgba(0,0,0,0.08)]',
-    'dark:shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.12),0_12px_40px_0_rgba(0,0,0,0.45)]',
+    'bg-white/92 hover:bg-white dark:bg-zinc-900/86 dark:hover:bg-zinc-900/95',
+    'border border-stone-900/8 hover:border-amber-500/35 dark:border-white/12 dark:hover:border-white/25',
+    'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.7),0_6px_22px_0_rgba(28,25,23,0.06)]',
+    'dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08),0_10px_28px_0_rgba(0,0,0,0.4)]',
     'transition-colors duration-200',
   ),
 }

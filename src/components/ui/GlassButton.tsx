@@ -28,21 +28,13 @@ export interface GlassButtonProps
 
 const VARIANT_CLASSES: Record<GlassButtonVariant, string> = {
   primary: cn(
-    'bg-gradient-to-b from-amber-600 to-amber-700 text-white',
-    'hover:from-amber-500 hover:to-amber-600',
-    'dark:from-amber-500 dark:to-amber-600 dark:text-zinc-950',
-    'dark:hover:from-amber-400 dark:hover:to-amber-500',
-    'border border-white/30 dark:border-amber-300/40',
-    'shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.45),0_8px_24px_-4px_rgba(180,83,9,0.4)]',
-    'dark:shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.45),0_8px_24px_-4px_rgba(245,158,11,0.35)]',
+    'liquid-glass-primary text-white',
+    'hover:brightness-105',
+    'dark:text-zinc-950',
   ),
   secondary: cn(
-    'backdrop-blur-2xl backdrop-saturate-150',
-    'bg-white/70 hover:bg-white/85 text-stone-900',
-    'dark:bg-zinc-900/60 dark:hover:bg-zinc-800/75 dark:text-stone-100',
-    'border border-white/45 dark:border-white/15',
-    'shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.6),0_8px_24px_0_rgba(0,0,0,0.08)]',
-    'dark:shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.12),0_10px_28px_0_rgba(0,0,0,0.4)]',
+    'liquid-glass text-stone-900 dark:text-stone-100',
+    'hover:brightness-105',
   ),
   ghost: cn(
     'bg-transparent hover:bg-white/45 text-stone-800',
@@ -50,11 +42,11 @@ const VARIANT_CLASSES: Record<GlassButtonVariant, string> = {
     'border border-transparent hover:border-white/35 dark:hover:border-white/15',
   ),
   danger: cn(
-    'backdrop-blur-2xl backdrop-saturate-150',
+    'backdrop-blur-md backdrop-saturate-[1.8]',
     'bg-red-600/90 hover:bg-red-600 text-white',
     'dark:bg-red-500/85 dark:hover:bg-red-500 dark:text-white',
     'border border-white/30 dark:border-red-300/30',
-    'shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.4),0_8px_24px_-4px_rgba(220,38,38,0.35)]',
+    'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.4),inset_0_-1px_0_0_rgba(255,255,255,0.12),0_8px_24px_-4px_rgba(220,38,38,0.35)]',
   ),
 }
 

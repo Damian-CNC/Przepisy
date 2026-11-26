@@ -50,13 +50,7 @@ export function BottomTabBar({ activeTab, onSelectTab, hidden = false }: BottomT
         aria-label="Główne zakładki aplikacji"
         className={cn(
           'pointer-events-auto relative grid w-full max-w-sm grid-cols-3 items-center p-1.5',
-          'rounded-full',
-          // Apple Liquid Glass
-          'bg-white/75 dark:bg-stone-900/80',
-          'backdrop-blur-2xl backdrop-saturate-150',
-          'border border-white/60 dark:border-white/15',
-          'shadow-[0_12px_40px_rgba(0,0,0,0.12),0_4px_12px_rgba(0,0,0,0.06),inset_0_1px_1.5px_rgba(255,255,255,0.8)]',
-          'dark:shadow-[0_16px_48px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.12)]',
+          'rounded-full liquid-glass',
         )}
       >
         {/* Płynny wskaźnik aktywnej zakładki na GPU (translate3d bez przeliczania layoutu) */}
@@ -68,9 +62,9 @@ export function BottomTabBar({ activeTab, onSelectTab, hidden = false }: BottomT
           <div
             className={cn(
               'size-full rounded-full',
-              'bg-gradient-to-b from-amber-500/20 to-amber-600/15 dark:from-amber-400/25 dark:to-amber-500/20',
-              'border border-amber-500/30 dark:border-amber-400/30',
-              'shadow-[0_2px_8px_rgba(245,158,11,0.2)]',
+              'bg-gradient-to-b from-amber-500/22 to-amber-600/14 dark:from-amber-400/28 dark:to-amber-500/18',
+              'border border-amber-500/35 dark:border-amber-400/35',
+              'shadow-[inset_0_1px_0_rgba(255,255,255,0.55),0_2px_10px_rgba(245,158,11,0.22)]',
             )}
           />
         </div>
@@ -87,10 +81,10 @@ export function BottomTabBar({ activeTab, onSelectTab, hidden = false }: BottomT
               aria-current={isActive ? 'page' : undefined}
               className={cn(
                 'group relative z-10 flex flex-col items-center justify-center gap-0.5 rounded-full py-1.5 px-2.5',
-                'cursor-pointer select-none transition-colors duration-300 outline-none',
+                'cursor-pointer select-none transition-all duration-300 active:scale-95 outline-none',
                 isActive
-                  ? 'text-amber-700 dark:text-amber-300'
-                  : 'text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200',
+                  ? 'text-amber-800 dark:text-amber-300'
+                  : 'text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-stone-100',
               )}
             >
               {/* Ikona z płynną skalą */}

@@ -210,7 +210,7 @@ export function RecipeDetailView({
           aria-hidden="true"
         />
 
-        {/* Pasek górnych akcji na zdjęciu (z zapasem poniżej Dynamic Island na iPhone) */}
+        {/* Pasek górnych akcji na zdjęciu (grupowana kapsuła Liquid Glass wzorowana na GlassEffectContainer) */}
         <div className="absolute inset-x-0 top-0 z-10 mx-auto flex w-full max-w-4xl items-center justify-between gap-2 px-4 pt-[calc(env(safe-area-inset-top,0px)+1rem)] sm:px-6">
           {/* Sama strzałka powrotna bez opisu */}
           <button
@@ -218,16 +218,16 @@ export function RecipeDetailView({
             aria-label={hasPreviousRecipe ? 'Wróć do poprzedniego przepisu' : 'Wróć do listy przepisów'}
             onClick={onBack}
             className={cn(
-              'inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full',
-              'border border-white/30 bg-zinc-950/65 text-white backdrop-blur-xl hover:bg-zinc-950/80',
+              'liquid-glass-dark inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-white',
+              'transition-transform duration-150 active:scale-95',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400',
             )}
           >
             <ArrowLeft className="size-5" aria-hidden="true" />
           </button>
 
-          <div className="flex shrink-0 items-center gap-2">
-            {/* Serduszko (Ulubione) — nie wychodzi poza ekran (Punkt 5) */}
+          <div className="liquid-glass-dark flex shrink-0 items-center gap-1 rounded-full p-1">
+            {/* Serduszko (Ulubione) */}
             <motion.button
               type="button"
               aria-label={isFavorite ? 'Usuń z ulubionych' : 'Dodaj do ulubionych'}
@@ -238,8 +238,8 @@ export function RecipeDetailView({
               whileTap={prefersReducedMotion ? undefined : { scale: 0.85 }}
               transition={{ type: 'spring', stiffness: 520, damping: 24 }}
               className={cn(
-                'inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full',
-                'border border-white/30 bg-zinc-950/65 text-white backdrop-blur-xl hover:bg-zinc-950/80',
+                'inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full text-white',
+                'transition-colors hover:bg-white/15',
                 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400',
               )}
             >
@@ -252,19 +252,19 @@ export function RecipeDetailView({
               />
             </motion.button>
 
-            {/* Zębatka — przełącznik Trybu Edycji (Punkt 7) */}
+            {/* Zębatka — przełącznik Trybu Edycji */}
             <button
               type="button"
               aria-label={isEditMode ? 'Wyłącz tryb edycji' : 'Włącz tryb edycji'}
               aria-pressed={isEditMode}
               onClick={() => setIsEditMode((prev) => !prev)}
               className={cn(
-                'inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full',
-                'border backdrop-blur-xl transition-colors',
+                'inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full',
+                'transition-all duration-150 active:scale-95',
                 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400',
                 isEditMode
-                  ? 'border-amber-400 bg-amber-500 text-zinc-950 shadow-md shadow-amber-500/30'
-                  : 'border-white/30 bg-zinc-950/65 text-white hover:bg-zinc-950/80 dark:border-white/25 dark:bg-zinc-950/70',
+                  ? 'bg-amber-500 text-zinc-950 shadow-md shadow-amber-500/30'
+                  : 'text-white hover:bg-white/15',
               )}
             >
               <Settings className="size-5" aria-hidden="true" />
@@ -778,7 +778,7 @@ export function RecipeDetailView({
             fullWidth
             leftIcon={<Play className="size-5 fill-current" aria-hidden="true" />}
             onClick={() => onStartCooking(recipe, targetServings)}
-            className="shadow-[0_16px_40px_rgba(180,83,9,0.45)]"
+            className="rounded-full"
           >
             Rozpocznij gotowanie (Krok po kroku)
           </GlassButton>

@@ -14,8 +14,7 @@ export function RecipeGridToggle({ layout, onChange, className }: RecipeGridTogg
       role="group"
       aria-label="Układ kafelków przepisów"
       className={cn(
-        'inline-flex shrink-0 items-center rounded-2xl p-1',
-        'border border-stone-900/10 bg-white/60 backdrop-blur-xl dark:border-white/15 dark:bg-zinc-900/60',
+        'liquid-glass inline-flex shrink-0 items-center rounded-full p-1',
         className,
       )}
     >

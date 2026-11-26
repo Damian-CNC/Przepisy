@@ -230,16 +230,23 @@ export function PizzaCalculatorView({
         </div>
       </div>
 
-      {/* 2 Opcje u góry: 1. Kalkulator, 2. Przepisy */}
-      <div className="flex items-center justify-center p-1 rounded-2xl bg-stone-900/5 dark:bg-white/10 backdrop-blur-xl border border-stone-900/10 dark:border-white/15 max-w-xs mx-auto w-full shadow-sm">
+      {/* 2 Opcje u góry: 1. Kalkulator, 2. Przepisy (Liquid Glass kapsuła z płynnym wskaźnikiem) */}
+      <div className="liquid-glass relative grid grid-cols-2 items-center p-1 rounded-full max-w-xs mx-auto w-full">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] transition-transform duration-400 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform motion-reduce:transition-none"
+          style={{ transform: `translate3d(${subView === 'recipes' ? '100%' : '0%'}, 0, 0)` }}
+        >
+          <div className="size-full rounded-full bg-amber-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_2px_8px_rgba(245,158,11,0.3)]" />
+        </div>
         <button
           type="button"
           onClick={() => setSubView('calculator')}
           className={cn(
-            'relative flex-1 py-1.5 px-3 text-xs sm:text-sm font-semibold rounded-xl transition-all duration-200 cursor-pointer text-center',
+            'relative z-10 py-1.5 px-3 text-xs sm:text-sm font-semibold rounded-full transition-colors duration-200 cursor-pointer text-center',
             subView === 'calculator'
-              ? 'bg-amber-500 text-white shadow-sm dark:bg-amber-500 dark:text-stone-950 font-bold'
-              : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200',
+              ? 'text-white dark:text-stone-950 font-bold'
+              : 'text-stone-700 dark:text-stone-300 hover:text-stone-900 dark:hover:text-stone-100',
           )}
         >
           Kalkulator
@@ -248,10 +255,10 @@ export function PizzaCalculatorView({
           type="button"
           onClick={() => setSubView('recipes')}
           className={cn(
-            'relative flex-1 py-1.5 px-3 text-xs sm:text-sm font-semibold rounded-xl transition-all duration-200 cursor-pointer text-center',
+            'relative z-10 py-1.5 px-3 text-xs sm:text-sm font-semibold rounded-full transition-colors duration-200 cursor-pointer text-center',
             subView === 'recipes'
-              ? 'bg-amber-500 text-white shadow-sm dark:bg-amber-500 dark:text-stone-950 font-bold'
-              : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200',
+              ? 'text-white dark:text-stone-950 font-bold'
+              : 'text-stone-700 dark:text-stone-300 hover:text-stone-900 dark:hover:text-stone-100',
           )}
         >
           Przepisy {pizzaRecipes.length > 0 && `(${pizzaRecipes.length})`}

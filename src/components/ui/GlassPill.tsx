@@ -32,29 +32,20 @@ export type GlassPillProps =
 
 const VARIANT_CLASSES: Record<GlassPillVariant, string> = {
   surface: cn(
-    'backdrop-blur-2xl backdrop-saturate-150',
-    'bg-white/65 text-stone-800 dark:bg-zinc-900/60 dark:text-stone-100',
-    'border border-white/45 dark:border-white/15',
-    'shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.6),0_8px_28px_0_rgba(0,0,0,0.08)]',
-    'dark:shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.12),0_12px_32px_0_rgba(0,0,0,0.45)]',
+    'liquid-glass text-stone-800 dark:text-stone-100',
   ),
   active: cn(
-    'backdrop-blur-xl backdrop-saturate-150',
-    'bg-stone-900 text-white dark:bg-amber-500 dark:text-zinc-950',
-    'border border-white/25 dark:border-amber-300/40',
-    'shadow-sm dark:shadow-[0_2px_10px_rgba(245,158,11,0.25)]',
+    'liquid-glass-dark text-white dark:bg-amber-500 dark:text-zinc-950',
+    'dark:border-amber-300/40',
   ),
   island: cn(
-    'backdrop-blur-2xl backdrop-saturate-180',
-    'bg-zinc-950/85 text-stone-50 dark:bg-zinc-900/85 dark:text-stone-50',
-    'border border-white/20 dark:border-white/15',
-    'shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.2),0_14px_38px_0_rgba(0,0,0,0.32)]',
+    'liquid-glass-dark text-stone-50',
   ),
   tag: cn(
-    'backdrop-blur-xl backdrop-saturate-150',
-    'bg-white/55 text-stone-700 dark:bg-zinc-800/60 dark:text-stone-200',
-    'border border-white/40 dark:border-white/15',
-    'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.5)]',
+    'backdrop-blur-md backdrop-saturate-[1.8]',
+    'bg-white/60 text-stone-700 dark:bg-zinc-800/60 dark:text-stone-200',
+    'border border-white/45 dark:border-white/15',
+    'shadow-[inset_0_1px_0_0_rgba(255,255,255,0.6),inset_0_-1px_0_0_rgba(255,255,255,0.12)]',
   ),
 }
 

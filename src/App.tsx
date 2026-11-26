@@ -689,14 +689,7 @@ export function App() {
                     <search className="min-w-0 flex-1">
                       <form
                         onSubmit={(e) => e.preventDefault()}
-                        className={cn(
-                          'flex items-center gap-2 rounded-2xl px-3 py-0.5',
-                          'backdrop-blur-2xl backdrop-saturate-150',
-                          'bg-white/70 dark:bg-zinc-900/65',
-                          'border border-white/50 dark:border-white/15',
-                          'shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.65),0_10px_32px_0_rgba(28,25,23,0.08)]',
-                          'dark:shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.12),0_14px_38px_0_rgba(0,0,0,0.45)]',
-                        )}
+                        className="liquid-glass flex items-center gap-2 rounded-full px-3.5 py-0.5"
                       >
                         <label htmlFor="recipe-search" className="sr-only">
                           Szukaj przepisu po nazwie lub składniku
