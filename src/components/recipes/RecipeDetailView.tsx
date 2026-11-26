@@ -443,7 +443,21 @@ export function RecipeDetailView({
               </div>
             )}
 
-            <div className="flex justify-end border-t border-amber-500/20 pt-3 dark:border-amber-400/20">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-amber-500/20 pt-3 dark:border-amber-400/20">
+              {safeSourceUrl ? (
+                <a
+                  href={safeSourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-amber-500/30 bg-white/70 px-3.5 py-1.5 text-xs font-semibold text-amber-800 hover:bg-white dark:border-amber-400/30 dark:bg-zinc-800/75 dark:text-amber-300 dark:hover:bg-zinc-800"
+                >
+                  <span>Źródło przepisu</span>
+                  <ExternalLink className="size-3.5" aria-hidden="true" />
+                </a>
+              ) : (
+                <span />
+              )}
+
               <GlassButton
                 type="button"
                 variant="danger"
@@ -500,17 +514,6 @@ export function RecipeDetailView({
                     <span className="tabular-nums">Obróbka: {cookMinutes} min</span>
                   </GlassPill>
                 )}
-                {safeSourceUrl && (
-                  <a
-                    href={safeSourceUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-white/40 bg-white/55 px-3.5 py-1.5 text-xs font-medium text-amber-800 backdrop-blur-xl hover:bg-white/80 dark:border-white/15 dark:bg-zinc-800/60 dark:text-amber-300"
-                  >
-                    <span>Źródło przepisu</span>
-                    <ExternalLink className="size-3.5" aria-hidden="true" />
-                  </a>
-                )}
               </div>
             </div>
 
@@ -557,33 +560,7 @@ export function RecipeDetailView({
                   <Plus className="size-4" aria-hidden="true" />
                 </GlassButton>
               </div>
-
-              {/* Przycisk Ugotuj widoczny bezpośrednio przy porcjach */}
-              <GlassButton
-                type="button"
-                variant="primary"
-                size="md"
-                leftIcon={<Play className="size-4 fill-current" aria-hidden="true" />}
-                onClick={() => onStartCooking(recipe, targetServings)}
-                className="hidden sm:inline-flex"
-              >
-                Ugotuj
-              </GlassButton>
             </div>
-          </div>
-
-          {/* Mobilny przycisk Ugotuj w karcie podsumowania */}
-          <div className="mt-4 sm:hidden">
-            <GlassButton
-              type="button"
-              variant="primary"
-              size="md"
-              fullWidth
-              leftIcon={<Play className="size-4 fill-current" aria-hidden="true" />}
-              onClick={() => onStartCooking(recipe, targetServings)}
-            >
-              Rozpocznij gotowanie
-            </GlassButton>
           </div>
         </GlassCard>
 
@@ -780,7 +757,7 @@ export function RecipeDetailView({
             onClick={() => onStartCooking(recipe, targetServings)}
             className="rounded-full"
           >
-            Rozpocznij gotowanie (Krok po kroku)
+            Rozpocznij gotowanie
           </GlassButton>
         </div>
       </div>
