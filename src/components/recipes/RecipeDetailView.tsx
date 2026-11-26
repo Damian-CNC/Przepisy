@@ -337,6 +337,23 @@ export function RecipeDetailView({
             >
               <Settings className="size-5" aria-hidden="true" />
             </button>
+
+            {/* Kosz — szybkie usuwanie przepisu (z potwierdzeniem w modalu) */}
+            <button
+              type="button"
+              aria-label="Usuń przepis"
+              onClick={() => {
+                setDeleteError(null)
+                setIsDeleteModalOpen(true)
+              }}
+              className={cn(
+                'inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full text-white',
+                'transition-all duration-150 hover:bg-rose-500/30 hover:text-rose-200 active:scale-95',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400',
+              )}
+            >
+              <Trash2 className="size-4.5" aria-hidden="true" />
+            </button>
           </div>
         </div>
       </div>
