@@ -415,6 +415,7 @@ export function App() {
     setRecipeHistory([id])
     setSelectedRecipeId(id)
     if (typeof window !== 'undefined') {
+      window.history.pushState({ appNav: 'recipe', id }, '')
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
     }
   }
@@ -423,11 +424,23 @@ export function App() {
     setRecipeHistory((prev) => [...prev, targetId])
     setSelectedRecipeId(targetId)
     if (typeof window !== 'undefined') {
+      window.history.pushState({ appNav: 'recipe', id: targetId }, '')
       window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
     }
   }
 
+  const handleStartCookingSession = (recipe: RecipeRow, targetServings: number) => {
+    setCookingSession({ recipe, targetServings })
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ appNav: 'cooking', id: recipe.id }, '')
+    }
+  }
+
   const handleBackFromRecipe = () => {
+    if (typeof window !== 'undefined' && (window.history.state as { appNav?: string } | null)?.appNav === 'recipe') {
+      window.history.back()
+      return
+    }
     if (recipeHistory.length > 1) {
       const nextHistory = recipeHistory.slice(0, -1)
       setRecipeHistory(nextHistory)
@@ -443,6 +456,41 @@ export function App() {
       }
     }
   }
+
+  const handleExitCooking = () => {
+    if (typeof window !== 'undefined' && (window.history.state as { appNav?: string } | null)?.appNav === 'cooking') {
+      window.history.back()
+      return
+    }
+    setCookingSession(null)
+  }
+
+  // Obsługa systemowego cofania / gestu wstecz na iPhone (History API popstate)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const handlePopState = () => {
+      if (cookingSession) {
+        setCookingSession(null)
+        return
+      }
+      if (recipeHistory.length > 1) {
+        const nextHistory = recipeHistory.slice(0, -1)
+        setRecipeHistory(nextHistory)
+        setSelectedRecipeId(nextHistory[nextHistory.length - 1])
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
+        return
+      }
+      if (selectedRecipeId !== null) {
+        setRecipeHistory([])
+        setSelectedRecipeId(null)
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [cookingSession, recipeHistory, selectedRecipeId])
 
   const handleRefreshAll = async () => {
     if (isManualRefreshing) return
@@ -568,7 +616,7 @@ export function App() {
                   key={activeCookingRecipe.id}
                   recipe={activeCookingRecipe}
                   targetServings={cookingSession.targetServings}
-                  onExit={() => setCookingSession(null)}
+                  onExit={handleExitCooking}
                   onUpdateRecipe={updateRecipeItem}
                 />
               </Suspense>
@@ -591,9 +639,7 @@ export function App() {
                   onUpdatePhoto={updatePhoto}
                   onUpdateRecipe={updateRecipeItem}
                   onRemoveRecipe={removeRecipe}
-                  onStartCooking={(recipe, targetServings) =>
-                    setCookingSession({ recipe, targetServings })
-                  }
+                  onStartCooking={handleStartCookingSession}
                 />
               </Suspense>
             ) : (

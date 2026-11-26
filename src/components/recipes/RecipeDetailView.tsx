@@ -174,12 +174,70 @@ export function RecipeDetailView({
     return updated
   }
 
+  // Gest cofania od lewej krawędzi (działa również w aplikacji PWA na ekranie głównym iPhone)
+  const edgeSwipeRef = useRef<{ startX: number; startY: number; active: boolean }>({
+    startX: 0,
+    startY: 0,
+    active: false,
+  })
+  const [swipeOffsetX, setSwipeOffsetX] = useState(0)
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length !== 1) return
+    const touch = e.touches[0]
+    if (touch.clientX <= 36) {
+      edgeSwipeRef.current = { startX: touch.clientX, startY: touch.clientY, active: true }
+    } else {
+      edgeSwipeRef.current.active = false
+    }
+  }
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!edgeSwipeRef.current.active || e.touches.length !== 1) return
+    const deltaX = e.touches[0].clientX - edgeSwipeRef.current.startX
+    const deltaY = e.touches[0].clientY - edgeSwipeRef.current.startY
+    if (Math.abs(deltaY) > Math.abs(deltaX) && deltaX < 18) {
+      edgeSwipeRef.current.active = false
+      setSwipeOffsetX(0)
+      return
+    }
+    if (deltaX > 8) {
+      setSwipeOffsetX(Math.min(96, deltaX * 0.45))
+    }
+  }
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!edgeSwipeRef.current.active) return
+    edgeSwipeRef.current.active = false
+    const touch = e.changedTouches[0]
+    const deltaX = touch ? touch.clientX - edgeSwipeRef.current.startX : 0
+    const deltaY = touch ? touch.clientY - edgeSwipeRef.current.startY : 0
+    setSwipeOffsetX(0)
+    if (deltaX > 65 && Math.abs(deltaX) > Math.abs(deltaY) * 1.4) {
+      onBack()
+    }
+  }
+
   return (
-    <div className="relative pb-36">
-      {/* Zdjęcie nagłówkowe z paralaksą przy przewijaniu */}
+    <div
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      style={
+        swipeOffsetX > 0
+          ? { transform: `translate3d(${swipeOffsetX}px, 0, 0)`, transition: 'none' }
+          : { transition: 'transform 200ms ease-out' }
+      }
+      className="relative"
+    >
+      {/* Zdjęcie nagłówkowe z paralaksą i płynnym zanikaniem w kolorze tła */}
       <div
         ref={heroWrapperRef}
-        className="recipe-hero-parallax-wrapper relative h-[min(58dvh,27rem)] min-h-80 w-full overflow-clip bg-gradient-to-br from-amber-200/85 via-orange-200/75 to-emerald-200/75 dark:from-amber-950/85 dark:via-stone-900 dark:to-emerald-950/80"
+        className="recipe-hero-parallax-wrapper relative h-[min(52dvh,25rem)] min-h-72 w-full overflow-clip bg-gradient-to-br from-amber-200/85 via-orange-200/75 to-emerald-200/75 dark:from-amber-950/85 dark:via-stone-900 dark:to-emerald-950/80"
+        style={{
+          WebkitMaskImage: 'linear-gradient(to bottom, #000 58%, transparent 100%)',
+          maskImage: 'linear-gradient(to bottom, #000 58%, transparent 100%)',
+        }}
       >
         <motion.div
           style={useMotionFallback ? { y: fallbackY, scale: fallbackScale } : undefined}
@@ -204,9 +262,19 @@ export function RecipeDetailView({
           )}
         </motion.div>
 
-        {/* Warstwa gradientu gwarantująca czytelność nakładek */}
+        {/* Subtelny górny cień dla czytelności przycisków nawigacyjnych */}
         <div
-          className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-black/30"
+          className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/40 to-transparent"
+          aria-hidden="true"
+        />
+
+        {/* Płynny gradient w kolorze tła aplikacji stapiający dół zdjęcia z resztą strony */}
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-32"
+          style={{
+            background:
+              'linear-gradient(to bottom, transparent 0%, color-mix(in srgb, var(--canvas-bg) 55%, transparent) 60%, var(--canvas-bg) 100%)',
+          }}
           aria-hidden="true"
         />
 
@@ -271,56 +339,6 @@ export function RecipeDetailView({
             </button>
           </div>
         </div>
-
-        {/* Tytuł i metadane na dole zdjęcia */}
-        <div className="absolute inset-x-0 bottom-0 z-10 mx-auto max-w-4xl px-4 pb-6 text-white sm:px-6">
-          <div className="mb-2.5 flex flex-wrap items-center gap-2">
-            {recipe.category && (
-              <span className="rounded-full border border-amber-300/40 bg-amber-500/85 px-3 py-1 text-xs font-semibold tracking-wide text-zinc-950 uppercase">
-                {recipe.category}
-              </span>
-            )}
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-zinc-950/70 px-3 py-1 text-xs font-medium text-white backdrop-blur-xl">
-              <SourceIcon className="size-3.5 text-amber-300" aria-hidden="true" />
-              {sourceLabel}
-            </span>
-            {totalMinutes > 0 && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-zinc-950/70 px-3 py-1 text-xs font-semibold text-white tabular-nums backdrop-blur-xl">
-                <Clock className="size-3.5 text-amber-300" aria-hidden="true" />
-                {totalMinutes} min
-              </span>
-            )}
-          </div>
-
-          <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-4xl">
-            {recipe.title}
-          </h1>
-
-          {/* Powiązane przepisy pod nazwą przepisu (Punkt 9) */}
-          {linkedRecipes.length > 0 && (
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="text-xs font-medium text-white/80">Pasuje do:</span>
-              {linkedRecipes.map((linked) => {
-                const target = allRecipes.find((r) => r.id === linked.recipe_id)
-                const displayTitle = target?.title || linked.label || 'Powiązany przepis'
-                const displayLabel = linked.label ? `${linked.label}: ` : ''
-                return (
-                  <button
-                    key={linked.recipe_id}
-                    type="button"
-                    onClick={() => onSelectRecipe?.(linked.recipe_id)}
-                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-amber-300/40 bg-zinc-950/75 px-3 py-1 text-xs font-semibold text-amber-300 backdrop-blur-xl transition-colors hover:bg-amber-500/25 active:scale-95"
-                  >
-                    <Link2 className="size-3.5 shrink-0 text-amber-400" aria-hidden="true" />
-                    <span className="max-w-[220px] truncate">
-                      {displayLabel}{displayTitle}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Ukryty input do wyboru pliku okładki */}
@@ -337,7 +355,62 @@ export function RecipeDetailView({
       />
 
       {/* Główna treść szczegółów */}
-      <main className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 pt-6 pb-32 sm:px-6">
+      <main className="relative z-10 mx-auto -mt-12 flex w-full max-w-4xl flex-col gap-5 px-4 pb-24 sm:px-6">
+        {/* Tytuł i metadane na płynnym przejściu pod zdjęciem */}
+        <header className="space-y-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            {recipe.category && (
+              <span className="rounded-full border border-amber-500/35 bg-amber-500/90 px-3 py-1 text-xs font-semibold tracking-wide text-zinc-950 uppercase shadow-xs">
+                {recipe.category}
+              </span>
+            )}
+            <GlassPill
+              variant="tag"
+              size="sm"
+              leftIcon={<SourceIcon className="size-3.5 text-amber-700 dark:text-amber-300" aria-hidden="true" />}
+            >
+              {sourceLabel}
+            </GlassPill>
+            {totalMinutes > 0 && (
+              <GlassPill
+                variant="tag"
+                size="sm"
+                leftIcon={<Clock className="size-3.5 text-amber-700 dark:text-amber-300" aria-hidden="true" />}
+              >
+                <span className="tabular-nums">{totalMinutes} min</span>
+              </GlassPill>
+            )}
+          </div>
+
+          <h1 className="text-2xl font-bold tracking-tight text-stone-900 sm:text-4xl dark:text-stone-50">
+            {recipe.title}
+          </h1>
+
+          {/* Powiązane przepisy pod nazwą przepisu */}
+          {linkedRecipes.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              <span className="text-xs font-medium text-stone-600 dark:text-stone-400">Pasuje do:</span>
+              {linkedRecipes.map((linked) => {
+                const target = allRecipes.find((r) => r.id === linked.recipe_id)
+                const displayTitle = target?.title || linked.label || 'Powiązany przepis'
+                const displayLabel = linked.label ? `${linked.label}: ` : ''
+                return (
+                  <button
+                    key={linked.recipe_id}
+                    type="button"
+                    onClick={() => onSelectRecipe?.(linked.recipe_id)}
+                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-amber-500/35 bg-amber-500/12 px-3 py-1 text-xs font-semibold text-amber-900 transition-colors hover:bg-amber-500/25 active:scale-95 dark:border-amber-400/35 dark:bg-amber-500/15 dark:text-amber-300"
+                  >
+                    <Link2 className="size-3.5 shrink-0 text-amber-700 dark:text-amber-400" aria-hidden="true" />
+                    <span className="max-w-[220px] truncate">
+                      {displayLabel}{displayTitle}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </header>
         {/* Panel Trybu Edycji pod Zębatką (Punkt 7, 8, 12) */}
         {isEditMode && (
           <section
